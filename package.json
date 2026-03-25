@@ -1,0 +1,27 @@
+{
+  "name": "atlassian-cli",
+  "version": "0.1.0",
+  "description": "CLI for Atlassian Jira and Confluence — Cloud and Server/Data Center",
+  "type": "module",
+  "bin": {
+    "atl": "./dist/bin/atl.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/bin/atl.js"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "dependencies": {
+    "chalk": "^5.4.1",
+    "commander": "^13.1.0",
+    "turndown": "^7.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "@types/turndown": "^5.0.5",
+    "typescript": "^5.8.3"
+  }
+}

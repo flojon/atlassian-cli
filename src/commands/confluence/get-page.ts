@@ -1,0 +1,49 @@
+import type { Command } from 'commander';
+import chalk from 'chalk';
+import { loadConfig, requireConfluenceConfig } from '../../config.js';
+import { createHttpClient } from '../../http.js';
+import { createConfluenceClient } from '../../clients/confluence.js';
+import { detectOutputMode, output } from '../../output.js';
+import type { ConfluencePage } from '../../types/confluence.js';
+
+function formatHuman(page: ConfluencePage): string {
+  const lines: string[] = [];
+
+  lines.push(chalk.bold(page.title));
+  lines.push(chalk.dim(`Space: ${page.spaceKey} (${page.spaceName})  |  Version: ${page.version}  |  Modified: ${page.lastModified}`));
+  if (page.lastModifiedBy) {
+    lines.push(chalk.dim(`By: ${page.lastModifiedBy}`));
+  }
+  lines.push(chalk.dim(page.url));
+  lines.push('');
+  lines.push(page.body);
+
+  return lines.join('\n');
+}
+
+export function registerGetPageCommand(confluence: Command): void {
+  confluence
+    .command('get-page')
+    .description('Get a Confluence page by ID or title+space')
+    .option('--id <pageId>', 'Page ID')
+    .option('--title <title>', 'Page title (use with --space)')
+    .option('--space <spaceKey>', 'Space key (use with --title)')
+    .option('--raw', 'Return raw HTML instead of markdown')
+    .option('--json', 'Output as JSON')
+    .action(async (opts: { id?: string; title?: string; space?: string; raw?: boolean; json?: boolean }) => {
+      const config = loadConfig();
+      const confConfig = requireConfluenceConfig(config);
+      const http = createHttpClient(confConfig);
+      const client = createConfluenceClient(http, confConfig.baseUrl, confConfig.deployment);
+      const ctx = detectOutputMode(opts.json);
+
+      const page = await client.getPage({
+        id: opts.id,
+        title: opts.title,
+        spaceKey: opts.space,
+        convertToMarkdown: !opts.raw,
+      });
+
+      output(page, formatHuman, ctx);
+    });
+}
