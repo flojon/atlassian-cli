@@ -1,9 +1,27 @@
+export interface ConfluenceImageInfo {
+  filename: string;
+  url: string;
+  width?: number;
+  height?: number;
+  mediaType?: string;
+  fileSize?: number;
+}
+
+export interface ConfluenceAttachment {
+  id: string;
+  title: string;
+  mediaType: string;
+  fileSize: number;
+  downloadUrl: string;
+}
+
 export interface ConfluencePage {
   id: string;
   title: string;
   spaceKey: string;
   spaceName: string;
   body: string;
+  images: ConfluenceImageInfo[];
   version: number;
   lastModified: string;
   lastModifiedBy: string | null;
@@ -64,5 +82,31 @@ export interface ConfluenceRawPage {
     view?: { value: string };
   };
   version?: { number: number; when: string; by?: { displayName: string } };
+  children?: {
+    attachment?: {
+      results: ConfluenceRawAttachment[];
+    };
+  };
   _links?: { base?: string; webui?: string };
+}
+
+export interface ConfluenceRawAttachment {
+  id: string;
+  type: string;
+  title: string;
+  extensions?: {
+    mediaType?: string;
+    fileSize?: number;
+  };
+  _links?: {
+    download?: string;
+  };
+}
+
+export interface ConfluenceRawAttachmentResponse {
+  results: ConfluenceRawAttachment[];
+  size: number;
+  limit: number;
+  start: number;
+  _links?: { next?: string };
 }

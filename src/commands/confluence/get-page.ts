@@ -18,6 +18,16 @@ function formatHuman(page: ConfluencePage): string {
   lines.push('');
   lines.push(page.body);
 
+  if (page.images.length > 0) {
+    lines.push('');
+    lines.push(chalk.bold(`Images (${page.images.length}):`));
+    for (const img of page.images) {
+      const size = img.fileSize ? ` (${(img.fileSize / 1024).toFixed(1)} KB)` : '';
+      const type = img.mediaType ? ` [${img.mediaType}]` : '';
+      lines.push(`  - ${img.filename}${type}${size} — ${img.url}`);
+    }
+  }
+
   return lines.join('\n');
 }
 

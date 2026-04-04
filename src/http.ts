@@ -1,3 +1,8 @@
+import { createWriteStream } from 'node:fs';
+import { mkdir } from 'node:fs/promises';
+import { dirname } from 'node:path';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { ApiError, formatApiError } from './errors.js';
 import type { ServiceConfig } from './types/common.js';
 
@@ -10,6 +15,7 @@ export interface RequestOptions {
 
 export interface HttpClient {
   request<T>(options: RequestOptions): Promise<T>;
+  downloadToFile(path: string, destPath: string): Promise<void>;
 }
 
 function buildAuthHeader(config: ServiceConfig): string {
@@ -73,6 +79,27 @@ export function createHttpClient(config: ServiceConfig): HttpClient {
       }
 
       return (await response.json()) as T;
+    },
+
+    async downloadToFile(path: string, destPath: string): Promise<void> {
+      const url = buildUrl(config.baseUrl, path, {});
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: { 'Authorization': authHeader },
+      });
+
+      if (!response.ok) {
+        throw new ApiError(`Download failed: ${response.status} ${response.statusText}`, response.status, `GET ${path}`);
+      }
+
+      if (!response.body) {
+        throw new ApiError('Empty response body', 0, `GET ${path}`);
+      }
+
+      await mkdir(dirname(destPath), { recursive: true });
+      const nodeStream = Readable.fromWeb(response.body as import('node:stream/web').ReadableStream);
+      await pipeline(nodeStream, createWriteStream(destPath));
     },
   };
 }

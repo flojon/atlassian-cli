@@ -2,7 +2,9 @@ import type { HttpClient } from '../http.js';
 import { htmlToMarkdown } from '../preprocessing/html-to-markdown.js';
 import type { DeploymentType } from '../types/common.js';
 import type {
+  ConfluenceAttachment,
   ConfluencePage,
+  ConfluenceRawAttachmentResponse,
   ConfluenceRawPage,
   ConfluenceRawSearchResponse,
   ConfluenceSearchEntry,
@@ -25,6 +27,8 @@ interface GetPageOptions {
 export interface ConfluenceClient {
   search(query: string, opts?: SearchOptions): Promise<ConfluenceSearchResult>;
   getPage(opts: GetPageOptions): Promise<ConfluencePage>;
+  getAttachments(pageId: string): Promise<ConfluenceAttachment[]>;
+  downloadAttachment(downloadPath: string, destPath: string): Promise<void>;
 }
 
 const CQL_OPERATORS = /[=~><]|AND|OR|NOT|IN\s*\(|currentUser\(\)/i;
@@ -88,7 +92,7 @@ function normalizeSearchEntry(
     spaceKey: content?.space?.key ?? '',
     spaceName: content?.space?.name ?? '',
     lastModified: content?.history?.lastUpdated?.when ?? '',
-    excerpt: entry.excerpt ? htmlToMarkdown(entry.excerpt) : '',
+    excerpt: entry.excerpt ? htmlToMarkdown(entry.excerpt).markdown : '',
     url: entry.url
       ? `${baseUrl}${entry.url}`
       : (content?._links?.webui ? `${baseUrl}${content._links.webui}` : ''),
@@ -102,7 +106,31 @@ function normalizePage(
   convertToMarkdown: boolean,
 ): ConfluencePage {
   const bodyHtml = raw.body?.storage?.value ?? raw.body?.view?.value ?? '';
-  const body = convertToMarkdown ? htmlToMarkdown(bodyHtml) : bodyHtml;
+
+  let body: string;
+  let images: import('../types/confluence.js').ConfluenceImageInfo[] = [];
+
+  if (convertToMarkdown) {
+    const result = htmlToMarkdown(bodyHtml, { contentId: raw.id, baseUrl });
+    body = result.markdown;
+    images = result.images;
+
+    // Enrich images with attachment metadata if available
+    const attachments = raw.children?.attachment?.results ?? [];
+    for (const img of images) {
+      const match = attachments.find(a => a.title === img.filename);
+      if (match) {
+        img.mediaType = match.extensions?.mediaType;
+        img.fileSize = match.extensions?.fileSize;
+        // Use the API-provided download link if available (more reliable)
+        if (match._links?.download) {
+          img.url = `${baseUrl}${match._links.download}`;
+        }
+      }
+    }
+  } else {
+    body = bodyHtml;
+  }
 
   return {
     id: raw.id,
@@ -110,6 +138,7 @@ function normalizePage(
     spaceKey: raw.space?.key ?? '',
     spaceName: raw.space?.name ?? '',
     body,
+    images,
     version: raw.version?.number ?? 0,
     lastModified: raw.version?.when ?? '',
     lastModifiedBy: raw.version?.by?.displayName ?? null,
@@ -161,7 +190,7 @@ export function createConfluenceClient(
           method: 'GET',
           path: `${apiPrefix}/content/${opts.id}`,
           query: {
-            expand: 'body.storage,version,space',
+            expand: 'body.storage,version,space,children.attachment',
           },
         });
 
@@ -176,7 +205,7 @@ export function createConfluenceClient(
           query: {
             title: opts.title,
             spaceKey: opts.spaceKey,
-            expand: 'body.storage,version,space',
+            expand: 'body.storage,version,space,children.attachment',
             limit: 1,
           },
         });
@@ -193,6 +222,34 @@ export function createConfluenceClient(
 
       const { ConfigError } = await import('../errors.js');
       throw new ConfigError('Either --id or both --title and --space are required.');
+    },
+
+    async getAttachments(pageId: string): Promise<ConfluenceAttachment[]> {
+      const response = await http.request<ConfluenceRawAttachmentResponse>({
+        method: 'GET',
+        path: `${apiPrefix}/content/${pageId}/child/attachment`,
+        query: {
+          limit: 250,
+        },
+      });
+
+      return response.results.map(raw => ({
+        id: raw.id,
+        title: raw.title,
+        mediaType: raw.extensions?.mediaType ?? 'application/octet-stream',
+        fileSize: raw.extensions?.fileSize ?? 0,
+        downloadUrl: raw._links?.download
+          ? `${baseUrl}${raw._links.download}`
+          : `${baseUrl}/download/attachments/${pageId}/${encodeURIComponent(raw.title)}`,
+      }));
+    },
+
+    async downloadAttachment(downloadPath: string, destPath: string): Promise<void> {
+      // downloadPath is an absolute URL — extract the path portion relative to baseUrl
+      const relativePath = downloadPath.startsWith(baseUrl)
+        ? downloadPath.slice(baseUrl.length)
+        : downloadPath;
+      await http.downloadToFile(relativePath, destPath);
     },
   };
 }

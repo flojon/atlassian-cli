@@ -4,11 +4,12 @@
 
 **atlassian-cli** (`atl`) is a TypeScript CLI for Jira and Confluence that serves as a lightweight alternative to the [mcp-atlassian](https://github.com/sooperset/mcp-atlassian) MCP server. Phase 1 replicates the 4 most-used read-only tools; write commands and additional tools are planned.
 
-The original MCP server has 73 tools (49 Jira + 24 Confluence). This CLI currently implements 4 Atlassian commands + 2 utility commands:
+The original MCP server has 73 tools (49 Jira + 24 Confluence). This CLI currently implements 5 Atlassian commands + 2 utility commands:
 - `atl jira search` — JQL search
 - `atl jira get-issue` — Full issue details with comments
 - `atl confluence search` — CQL/text search
-- `atl confluence get-page` — Page content by ID or title+space
+- `atl confluence get-page` — Page content by ID or title+space (layout-aware, with image extraction)
+- `atl confluence download-attachments` — Download page attachments to local directory
 - `atl install` — Install AI agent skill files (Claude Code, Cursor, Copilot)
 - `atl uninstall` — Remove installed skill files
 
@@ -49,7 +50,7 @@ npm publish --access public    # publish to npm registry
 bin/atl.ts                        # CLI entry point, commander setup
 src/
   config.ts                       # Env var loading, Cloud vs Server detection
-  http.ts                         # HTTP client with auth (Basic / PAT)
+  http.ts                         # HTTP client with auth (Basic / PAT) + file download
   output.ts                       # JSON vs human-readable output (auto-detects TTY)
   errors.ts                       # CliError, ConfigError, ApiError
   installer.ts                    # Skill file installer for AI agents
@@ -59,7 +60,7 @@ src/
     confluence.ts                 # Confluence data models
   preprocessing/
     adf-to-text.ts                # Atlassian Document Format → Markdown
-    html-to-markdown.ts           # HTML → Markdown (Confluence pages)
+    html-to-markdown.ts           # HTML → Markdown with layout/macro/image handling
   clients/
     jira.ts                       # Jira API client (Cloud v3 / Server v2)
     confluence.ts                 # Confluence API client
@@ -67,7 +68,7 @@ src/
     jira/
       search.ts, get-issue.ts, index.ts
     confluence/
-      search.ts, get-page.ts, index.ts
+      search.ts, get-page.ts, download-attachments.ts, index.ts
   skills/atl/SKILL.md             # Unified skill file bundled for AI agents
 .claude/skills/                   # Claude Code skill definitions (dev only)
 ```
@@ -76,7 +77,8 @@ src/
 
 - **Cloud vs Server/DC:** Auto-detected from URL (`atlassian.net` = Cloud). Cloud uses REST API v3 (Jira) with POST search; Server uses v2 with GET search. The clients handle this transparently.
 - **Auth:** Basic Auth (email + API token) for Cloud; PAT (Bearer token) preferred for Server/DC, Basic Auth as fallback.
-- **Content normalization:** Raw API responses are normalized to unified types. Jira Cloud returns ADF (JSON), Server returns wiki markup — both converted to Markdown. Confluence HTML is converted via Turndown.
+- **Content normalization:** Raw API responses are normalized to unified types. Jira Cloud returns ADF (JSON), Server returns wiki markup — both converted to Markdown. Confluence HTML is converted via Turndown with targeted rules for layouts, code blocks, panels, expand sections, and images.
+- **Image extraction:** `htmlToMarkdown()` returns `{ markdown, images }` — the images array collects all `ac:image` references found during conversion, enriched with attachment metadata from the API.
 - **Output mode:** Auto-detects TTY for human-readable tables vs JSON for piped output. `--json` flag forces JSON.
 - **Factory pattern:** `createHttpClient()`, `createJiraClient()`, `createConfluenceClient()` — no classes, just functions returning objects.
 - **Error hierarchy:** `CliError` base → `ConfigError` (missing env vars) and `ApiError` (HTTP failures).
