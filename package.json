@@ -1,15 +1,28 @@
 {
-  "name": "atlassian-cli",
+  "name": "@sahajamit/atlassian-cli",
   "version": "0.1.0",
   "description": "CLI for Atlassian Jira and Confluence — Cloud and Server/Data Center",
   "type": "module",
+  "license": "MIT",
+  "author": "Amit Rawat <sahajamit@gmail.com> (https://amitrawat.dev/)",
+  "homepage": "https://amitrawat.dev/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sahajamit/atlassian-cli"
+  },
+  "keywords": ["atlassian", "jira", "confluence", "cli", "devtools"],
   "bin": {
     "atl": "./dist/bin/atl.js"
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && npm run copy-skills",
+    "copy-skills": "mkdir -p dist/src/skills/atl && cp src/skills/atl/SKILL.md dist/src/skills/atl/SKILL.md",
     "dev": "tsc --watch",
-    "start": "node dist/bin/atl.js"
+    "start": "node dist/bin/atl.js",
+    "prepublishOnly": "npm run build"
   },
   "engines": {
     "node": ">=22.0.0"
