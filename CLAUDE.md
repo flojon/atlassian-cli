@@ -4,11 +4,13 @@
 
 **atlassian-cli** (`atl`) is a TypeScript CLI for Jira and Confluence that serves as a lightweight alternative to the [mcp-atlassian](https://github.com/sooperset/mcp-atlassian) MCP server. Phase 1 replicates the 4 most-used read-only tools; write commands and additional tools are planned.
 
-The original MCP server has 73 tools (49 Jira + 24 Confluence). This CLI currently implements 4:
+The original MCP server has 73 tools (49 Jira + 24 Confluence). This CLI currently implements 4 Atlassian commands + 2 utility commands:
 - `atl jira search` — JQL search
 - `atl jira get-issue` — Full issue details with comments
 - `atl confluence search` — CQL/text search
 - `atl confluence get-page` — Page content by ID or title+space
+- `atl install` — Install AI agent skill files (Claude Code, Cursor, Copilot)
+- `atl uninstall` — Remove installed skill files
 
 ## Tech Stack
 
@@ -22,13 +24,24 @@ The original MCP server has 73 tools (49 Jira + 24 Confluence). This CLI current
 ## Build & Run
 
 ```bash
-npm run build          # tsc → dist/
-npm run dev            # tsc --watch
+npm run build          # tsc → dist/ + copies SKILL.md into dist
+npm run dev            # tsc --watch (does NOT copy skills)
 npm start              # node dist/bin/atl.js
 node dist/bin/atl.js   # direct invocation
 ```
 
 Entry point: `bin/atl.ts` → compiles to `dist/bin/atl.js`
+
+## Publishing to npm
+
+The package is scoped as `@sahajamit/atlassian-cli`. Key npm config in `package.json`:
+- `files: ["dist"]` — only the `dist/` directory is published
+- `prepublishOnly: "npm run build"` — auto-builds before publish
+- `build` includes `copy-skills` step that copies `src/skills/atl/SKILL.md` into `dist/`
+
+```bash
+npm publish --access public    # publish to npm registry
+```
 
 ## Project Structure
 
@@ -39,6 +52,7 @@ src/
   http.ts                         # HTTP client with auth (Basic / PAT)
   output.ts                       # JSON vs human-readable output (auto-detects TTY)
   errors.ts                       # CliError, ConfigError, ApiError
+  installer.ts                    # Skill file installer for AI agents
   types/
     common.ts                     # Auth, Config, ServiceConfig types
     jira.ts                       # Jira data models
@@ -54,7 +68,8 @@ src/
       search.ts, get-issue.ts, index.ts
     confluence/
       search.ts, get-page.ts, index.ts
-.claude/skills/                   # Claude Code skill definitions for each command
+  skills/atl/SKILL.md             # Unified skill file bundled for AI agents
+.claude/skills/                   # Claude Code skill definitions (dev only)
 ```
 
 ## Key Architecture Patterns
@@ -82,6 +97,16 @@ JIRA_PERSONAL_TOKEN=...
 # Optional: JIRA_SSL_VERIFY=false / CONFLUENCE_SSL_VERIFY=false
 ```
 
+## Skill Installer (`atl install` / `atl uninstall`)
+
+The CLI can install a unified skill file (`src/skills/atl/SKILL.md`) into AI agent directories so agents know how to use `atl`. Targets:
+- **Claude Code** → `~/.claude/skills/atl/SKILL.md`
+- **Cursor** → `~/.cursor/rules/atl.md`
+- **Copilot (standalone)** → `~/.copilot/skills/atl/SKILL.md`
+- **GitHub Copilot** → appends to `.github/copilot-instructions.md` (with `<!-- atl-skill -->` markers for idempotent updates)
+
+The installer (`src/installer.ts`) locates the bundled SKILL.md relative to its own compiled path (`dist/src/skills/atl/SKILL.md`). The `copy-skills` build step ensures it's there.
+
 ## Adding New Commands
 
 1. Add types to `src/types/jira.ts` or `src/types/confluence.ts`
@@ -89,6 +114,7 @@ JIRA_PERSONAL_TOKEN=...
 3. Create command file in `src/commands/<service>/<command>.ts`
 4. Register in `src/commands/<service>/index.ts`
 5. Add a Claude Code skill in `.claude/skills/`
+6. Update the unified skill file in `src/skills/atl/SKILL.md`
 
 Follow existing patterns: normalize API responses, handle Cloud/Server differences in the client layer, use `formatOutput()` for display.
 

@@ -85,7 +85,7 @@ JIRA_URL=https://... JIRA_PERSONAL_TOKEN=... node dist/bin/atl.js jira search "p
 npm run build
 ```
 
-This runs `tsc` and outputs compiled JavaScript to the `dist/` directory.
+This runs `tsc` and copies the skill file (`src/skills/atl/SKILL.md`) into `dist/`. The compiled output goes to `dist/`.
 
 ### Watch mode (auto-recompile on save)
 
@@ -134,7 +134,7 @@ atl confluence get-page --id 12345
 To remove the link when done:
 
 ```bash
-npm unlink -g atlassian-cli
+npm unlink -g @sahajamit/atlassian-cli
 ```
 
 ## Testing Workflows
@@ -175,6 +175,21 @@ atl confluence get-page --id 12345 --raw
 
 # JSON output
 atl confluence search "onboarding" --json | jq '.results[] | {id, title, url}'
+```
+
+### Skill installer
+
+```bash
+# Install skill files into AI agent directories
+atl install
+
+# Verify files were created
+ls ~/.claude/skills/atl/SKILL.md
+ls ~/.cursor/rules/atl.md          # only if Cursor is set up
+ls ~/.copilot/skills/atl/SKILL.md
+
+# Uninstall skill files
+atl uninstall
 ```
 
 ### Verifying output modes
@@ -236,9 +251,82 @@ rm -rf dist
 npm run build
 ```
 
+## Publishing to npm
+
+The package is published as `@sahajamit/atlassian-cli`. Only the `dist/` directory is included in the published package (controlled by the `files` field in `package.json`).
+
+### Pre-publish checklist
+
+1. Ensure `npm run build` succeeds with no errors
+2. Test all commands against at least one deployment type (Cloud or Server/DC)
+3. Verify `atl install` and `atl uninstall` work correctly
+4. Verify `dist/src/skills/atl/SKILL.md` exists after build (the `copy-skills` step)
+5. Update the version in `package.json` if needed
+
+### Dry run (inspect what will be published)
+
+```bash
+npm pack --dry-run
+```
+
+This lists all files that would be included in the tarball. Verify that only `dist/` contents are listed and no source files, `.env`, or credentials leak through.
+
+### Publish
+
+```bash
+# First time: you need to be logged in
+npm login
+
+# Publish (auto-runs prepublishOnly → npm run build)
+npm publish --access public
+```
+
+### Testing the published package
+
+After publishing, verify the install works end-to-end:
+
+```bash
+# Install globally from npm
+npm install -g @sahajamit/atlassian-cli
+
+# Verify the binary works
+atl --version
+atl --help
+
+# Install skill files
+atl install
+
+# Test with real credentials
+atl jira search "project = PROJ" --limit 1
+atl confluence search "test" --limit 1
+
+# Clean up
+npm uninstall -g @sahajamit/atlassian-cli
+```
+
+### Local testing before publishing (alternative to npm link)
+
+You can also test the package install flow locally without publishing:
+
+```bash
+# Create a tarball
+npm pack
+
+# Install the tarball globally
+npm install -g sahajamit-atlassian-cli-0.1.0.tgz
+
+# Test it
+atl --help
+atl install
+
+# Clean up
+npm uninstall -g @sahajamit/atlassian-cli
+rm sahajamit-atlassian-cli-0.1.0.tgz
+```
+
 ## Before Submitting a PR
 
 1. Ensure `npm run build` succeeds with no errors
 2. Test your changes against at least one deployment type (Cloud or Server/DC)
 3. Verify both human-readable and JSON output modes work
-4. If you added a new command, add a corresponding skill file in `.claude/skills/`
+4. If you added a new command, add a corresponding skill file in `.claude/skills/` and update `src/skills/atl/SKILL.md`
