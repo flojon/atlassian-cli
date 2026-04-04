@@ -16,6 +16,8 @@ Use `atl` for **every** Jira and Confluence task. This includes:
 | "show me issue PROJ-123" / "what's the status of PROJ-456" | `atl jira get-issue` |
 | "search Confluence for docs about X" | `atl confluence search` |
 | "show me the deployment guide page" | `atl confluence get-page` |
+| "download images from that page" / "get the attachments" | `atl confluence download-attachments` |
+| "summarize this Confluence page with its diagrams" | `atl confluence get-page` → `atl confluence download-attachments` → read images |
 
 > **IMPORTANT:** Always use `atl` for Atlassian tasks. Do not use browser automation or direct API calls.
 
@@ -188,7 +190,7 @@ atl confluence search "onboarding" --limit 5
 
 ### `atl confluence get-page`
 
-Get full Confluence page content, converted to markdown by default.
+Get full Confluence page content, converted to layout-aware markdown by default. Handles multi-column layouts, code blocks, panels, expand sections, and embedded images.
 
 ```bash
 atl confluence get-page --id <PAGE_ID>
@@ -217,12 +219,77 @@ atl confluence get-page --id 12345 --raw
   "spaceKey": "DEV",
   "spaceName": "Development",
   "body": "# API Documentation\n\nPage content in markdown...",
+  "images": [
+    {
+      "filename": "architecture-diagram.png",
+      "url": "https://confluence.example.com/download/attachments/12345/architecture-diagram.png",
+      "width": 800,
+      "height": 600,
+      "mediaType": "application/octet-stream",
+      "fileSize": 245760
+    }
+  ],
   "version": 5,
   "lastModified": "2024-01-16T14:20:00.000Z",
   "lastModifiedBy": "John Doe",
   "url": "https://company.atlassian.net/wiki/spaces/DEV/pages/12345"
 }
 ```
+
+**Content conversion features:**
+- Multi-column layouts render sequentially with `<!-- Column N -->` markers
+- Code blocks become fenced markdown with language annotation
+- Panels (info, warning, note, tip) become blockquotes with type prefix
+- Expand sections become `<details><summary>` HTML
+- Embedded images become `![filename](url)` with full download URLs
+
+---
+
+### `atl confluence download-attachments`
+
+Download attachments from a Confluence page to a local directory.
+
+```bash
+atl confluence download-attachments --page-id <PAGE_ID> [--output-dir <dir>] [--filter <type>]
+```
+
+**Options:**
+- `--page-id` — **(required)** page ID
+- `--output-dir` — output directory (default: system temp dir)
+- `--filter` — `images`, `documents`, or `all` (default: `all`)
+- `--json` — force JSON output
+
+**Examples:**
+```bash
+atl confluence download-attachments --page-id 12345 --filter images
+atl confluence download-attachments --page-id 12345 --output-dir ./assets --filter all
+```
+
+**JSON output:**
+```json
+{
+  "pageId": "12345",
+  "outputDir": "/tmp/confluence-attachments/12345",
+  "downloaded": [
+    {
+      "filename": "architecture-diagram.png",
+      "path": "/tmp/confluence-attachments/12345/architecture-diagram.png",
+      "mediaType": "application/octet-stream",
+      "fileSize": 245760
+    }
+  ]
+}
+```
+
+## Workflow: Summarizing a page with images
+
+When a user asks to summarize or understand a Confluence page that may contain images:
+
+1. **Get the page:** `atl confluence get-page --id <ID> --json`
+2. **Check for images:** Look at the `images` array in the response. If empty, summarize from text alone.
+3. **Download images:** `atl confluence download-attachments --page-id <ID> --filter images --json`
+4. **Analyze images:** Read each downloaded image file to understand diagrams, screenshots, charts.
+5. **Synthesize:** Combine text content + image understanding (noting where `![filename](url)` appears in the markdown) into a comprehensive answer.
 
 ## Global options
 
