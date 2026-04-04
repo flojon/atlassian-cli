@@ -29,13 +29,15 @@ export interface ConfluenceClient {
 
 const CQL_OPERATORS = /[=~><]|AND|OR|NOT|IN\s*\(|currentUser\(\)/i;
 
-function buildCql(query: string, spaces?: string[]): string {
-  // If query doesn't look like CQL, wrap as siteSearch
+function buildCql(query: string, deployment: DeploymentType, spaces?: string[]): string {
+  // If query doesn't look like CQL, wrap as text search
   let cql: string;
   if (CQL_OPERATORS.test(query)) {
     cql = query;
   } else {
-    cql = `siteSearch ~ "${query.replace(/"/g, '\\"')}"`;
+    // siteSearch is Cloud-only; Server/DC uses the "text" CQL field instead
+    const searchField = deployment === 'cloud' ? 'siteSearch' : 'text';
+    cql = `${searchField} ~ "${query.replace(/"/g, '\\"')}"`;
   }
 
   // Apply spaces filter
@@ -126,7 +128,7 @@ export function createConfluenceClient(
     async search(query: string, opts: SearchOptions = {}): Promise<ConfluenceSearchResult> {
       const limit = opts.limit ?? 10;
       const offset = opts.offset ?? 0;
-      const cql = buildCql(query, opts.spaces);
+      const cql = buildCql(query, deployment, opts.spaces);
 
       const response = await http.request<ConfluenceRawSearchResponse>({
         method: 'GET',
