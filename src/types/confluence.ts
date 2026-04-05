@@ -57,6 +57,7 @@ export interface ConfluenceRawSearchResponse {
 }
 
 export interface ConfluenceRawSearchEntry {
+  // Cloud wraps page data under `content`; Server/DC puts it at the top level
   content?: {
     id: string;
     type: string;
@@ -66,7 +67,14 @@ export interface ConfluenceRawSearchEntry {
     space?: { key: string; name: string };
     history?: { lastUpdated?: { when: string } };
   };
+  // Server/DC top-level fields (same shape as content)
+  id?: string;
+  type?: string;
   title?: string;
+  status?: string;
+  _links?: { webui?: string };
+  space?: { key: string; name: string };
+  history?: { lastUpdated?: { when: string } };
   excerpt?: string;
   url?: string;
 }
