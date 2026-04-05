@@ -1,23 +1,24 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync, rmdirSync, copyFileSync } from 'node:fs';
-import { join, dirname, resolve } from 'node:path';
+import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const SKILL_NAME = 'atl';
-const MARKER = '<!-- atl-skill -->';
+const SKILLS = [
+  { name: 'atl', dir: 'atl' },
+  { name: 'atl-jira', dir: 'atl-jira' },
+  { name: 'atl-confluence', dir: 'atl-confluence' },
+];
 
-function getSkillSource(): string {
-  // When installed via npm, skill file is at dist/src/skills/atl/SKILL.md
-  // relative to this file (dist/src/installer.js)
-  const candidate = join(__dirname, 'skills', SKILL_NAME, 'SKILL.md');
+function getSkillSource(skillDir: string): string {
+  const candidate = join(__dirname, 'skills', skillDir, 'SKILL.md');
   if (existsSync(candidate)) {
     return candidate;
   }
   throw new Error(
-    `Could not locate SKILL.md (looked at ${candidate}). ` +
+    `Could not locate ${skillDir}/SKILL.md (looked at ${candidate}). ` +
     'Re-install atl-cli or run from the project root.',
   );
 }
@@ -29,72 +30,74 @@ function ensureDir(dir: string): void {
 }
 
 export function installSkills(): void {
-  let sourcePath: string;
-  try {
-    sourcePath = getSkillSource();
-  } catch (e) {
-    console.error(`Error: ${(e as Error).message}`);
-    return;
-  }
-
-  const skillContent = readFileSync(sourcePath, 'utf-8');
   const home = homedir();
   const installed: string[] = [];
   const skipped: string[] = [];
 
-  // ── Claude Code ──────────────────────────────────────────────────────
-  const claudeTarget = join(home, '.claude', 'skills', SKILL_NAME, 'SKILL.md');
-  ensureDir(dirname(claudeTarget));
-  copyFileSync(sourcePath, claudeTarget);
-  installed.push(`Claude Code  →  ${claudeTarget}`);
+  for (const skill of SKILLS) {
+    let sourcePath: string;
+    try {
+      sourcePath = getSkillSource(skill.dir);
+    } catch (e) {
+      console.error(`Error: ${(e as Error).message}`);
+      continue;
+    }
 
-  // ── Cursor ───────────────────────────────────────────────────────────
-  const cursorRulesDir = join(home, '.cursor', 'rules');
-  if (existsSync(cursorRulesDir)) {
-    const cursorTarget = join(cursorRulesDir, `${SKILL_NAME}.md`);
-    copyFileSync(sourcePath, cursorTarget);
-    installed.push(`Cursor       →  ${cursorTarget}`);
-  } else {
-    skipped.push('Cursor (~/.cursor/rules not found — open Cursor at least once to create it)');
-  }
+    // ── Claude Code ──────────────────────────────────────────────────
+    const claudeTarget = join(home, '.claude', 'skills', skill.name, 'SKILL.md');
+    ensureDir(dirname(claudeTarget));
+    copyFileSync(sourcePath, claudeTarget);
+    installed.push(`Claude Code  →  ${claudeTarget}`);
 
-  // ── Copilot (standalone) ─────────────────────────────────────────────
-  const copilotSkillsTarget = join(home, '.copilot', 'skills', SKILL_NAME, 'SKILL.md');
-  ensureDir(dirname(copilotSkillsTarget));
-  copyFileSync(sourcePath, copilotSkillsTarget);
-  installed.push(`Copilot      →  ${copilotSkillsTarget}`);
+    // ── Cursor ───────────────────────────────────────────────────────
+    const cursorRulesDir = join(home, '.cursor', 'rules');
+    if (existsSync(cursorRulesDir)) {
+      const cursorTarget = join(cursorRulesDir, `${skill.name}.md`);
+      copyFileSync(sourcePath, cursorTarget);
+      installed.push(`Cursor       →  ${cursorTarget}`);
+    } else if (skill.name === 'atl') {
+      skipped.push('Cursor (~/.cursor/rules not found — open Cursor at least once to create it)');
+    }
 
-  // ── GitHub Copilot (append to .github/copilot-instructions.md) ──────
-  const copilotDir = '.github';
-  const copilotTarget = join(copilotDir, 'copilot-instructions.md');
-  if (existsSync(copilotDir)) {
-    let newContent: string;
-    if (existsSync(copilotTarget)) {
-      const existing = readFileSync(copilotTarget, 'utf-8');
-      if (existing.includes(MARKER)) {
-        // Already present — replace block
-        const beforeIdx = existing.indexOf(MARKER);
-        const afterIdx = existing.indexOf(MARKER, beforeIdx + MARKER.length);
-        if (afterIdx !== -1) {
-          const before = existing.slice(0, beforeIdx);
-          const tail = existing.slice(afterIdx + MARKER.length);
-          newContent = before + MARKER + '\n' + skillContent + '\n' + MARKER + tail;
+    // ── Copilot (standalone) ─────────────────────────────────────────
+    const copilotSkillsTarget = join(home, '.copilot', 'skills', skill.name, 'SKILL.md');
+    ensureDir(dirname(copilotSkillsTarget));
+    copyFileSync(sourcePath, copilotSkillsTarget);
+    installed.push(`Copilot      →  ${copilotSkillsTarget}`);
+
+    // ── GitHub Copilot (append to .github/copilot-instructions.md) ──
+    const copilotDir = '.github';
+    const copilotTarget = join(copilotDir, 'copilot-instructions.md');
+    const marker = `<!-- ${skill.name}-skill -->`;
+    if (existsSync(copilotDir)) {
+      const skillContent = readFileSync(sourcePath, 'utf-8');
+      let newContent: string;
+      if (existsSync(copilotTarget)) {
+        const existing = readFileSync(copilotTarget, 'utf-8');
+        if (existing.includes(marker)) {
+          const beforeIdx = existing.indexOf(marker);
+          const afterIdx = existing.indexOf(marker, beforeIdx + marker.length);
+          if (afterIdx !== -1) {
+            const before = existing.slice(0, beforeIdx);
+            const tail = existing.slice(afterIdx + marker.length);
+            newContent = before + marker + '\n' + skillContent + '\n' + marker + tail;
+          } else {
+            newContent = existing + `\n\n${marker}\n${skillContent}\n${marker}\n`;
+          }
         } else {
-          newContent = existing + `\n\n${MARKER}\n${skillContent}\n${MARKER}\n`;
+          newContent = existing + `\n\n${marker}\n${skillContent}\n${marker}\n`;
         }
       } else {
-        newContent = existing + `\n\n${MARKER}\n${skillContent}\n${MARKER}\n`;
+        newContent = `${marker}\n${skillContent}\n${marker}\n`;
       }
-    } else {
-      newContent = `${MARKER}\n${skillContent}\n${MARKER}\n`;
+      writeFileSync(copilotTarget, newContent, 'utf-8');
+      installed.push(`GitHub Copilot  →  ${copilotTarget} (${skill.name})`);
+    } else if (skill.name === 'atl') {
+      skipped.push('GitHub Copilot (.github/ not found — run from the root of a git repo)');
     }
-    writeFileSync(copilotTarget, newContent, 'utf-8');
-    installed.push(`GitHub Copilot  →  ${resolve(copilotTarget)}`);
-  } else {
-    skipped.push('GitHub Copilot (.github/ not found — run from the root of a git repo)');
   }
 
-  // ── Summary ──────────────────────────────────────────────────────────
+  // ── Summary ───────────────────────────────────────────────────��──────
   console.log('\natl skills installed:');
   for (const msg of installed) {
     console.log(`  ✓  ${msg}`);
@@ -113,58 +116,51 @@ export function uninstallSkills(): void {
   const removed: string[] = [];
   const skipped: string[] = [];
 
-  // ── Claude Code ──────────────────────────────────────────────────────
-  const claudeTarget = join(home, '.claude', 'skills', SKILL_NAME, 'SKILL.md');
-  if (existsSync(claudeTarget)) {
-    unlinkSync(claudeTarget);
-    try { rmdirSync(dirname(claudeTarget)); } catch { /* not empty */ }
-    removed.push(`Claude Code  →  ${claudeTarget}`);
-  } else {
-    skipped.push('Claude Code (not installed)');
-  }
-
-  // ── Cursor ───────────────────────────────────────────────────────────
-  const cursorTarget = join(home, '.cursor', 'rules', `${SKILL_NAME}.md`);
-  if (existsSync(cursorTarget)) {
-    unlinkSync(cursorTarget);
-    removed.push(`Cursor       →  ${cursorTarget}`);
-  } else {
-    skipped.push('Cursor (not installed)');
-  }
-
-  // ── Copilot (standalone) ─────────────────────────────────────────────
-  const copilotSkillsTarget = join(home, '.copilot', 'skills', SKILL_NAME, 'SKILL.md');
-  if (existsSync(copilotSkillsTarget)) {
-    unlinkSync(copilotSkillsTarget);
-    try { rmdirSync(dirname(copilotSkillsTarget)); } catch { /* not empty */ }
-    removed.push(`Copilot      →  ${copilotSkillsTarget}`);
-  } else {
-    skipped.push('Copilot (not installed)');
-  }
-
-  // ── GitHub Copilot ───────────────────────────────────────────────────
-  const copilotTarget = join('.github', 'copilot-instructions.md');
-  if (existsSync(copilotTarget)) {
-    const existing = readFileSync(copilotTarget, 'utf-8');
-    if (existing.includes(MARKER)) {
-      const beforeIdx = existing.indexOf(MARKER);
-      const afterIdx = existing.indexOf(MARKER, beforeIdx + MARKER.length);
-      if (afterIdx !== -1) {
-        const before = existing.slice(0, beforeIdx);
-        const tail = existing.slice(afterIdx + MARKER.length);
-        const newContent = (before + tail).trim();
-        if (newContent) {
-          writeFileSync(copilotTarget, newContent + '\n', 'utf-8');
-        } else {
-          unlinkSync(copilotTarget);
-        }
-        removed.push(`GitHub Copilot  →  ${resolve(copilotTarget)}`);
-      }
-    } else {
-      skipped.push('GitHub Copilot (atl block not found)');
+  for (const skill of SKILLS) {
+    // ── Claude Code ──────────────────────────────────────────────────
+    const claudeTarget = join(home, '.claude', 'skills', skill.name, 'SKILL.md');
+    if (existsSync(claudeTarget)) {
+      unlinkSync(claudeTarget);
+      try { rmdirSync(dirname(claudeTarget)); } catch { /* not empty */ }
+      removed.push(`Claude Code  →  ${claudeTarget}`);
     }
-  } else {
-    skipped.push('GitHub Copilot (.github/copilot-instructions.md not found)');
+
+    // ── Cursor ───────────────────────────────────────────────────────
+    const cursorTarget = join(home, '.cursor', 'rules', `${skill.name}.md`);
+    if (existsSync(cursorTarget)) {
+      unlinkSync(cursorTarget);
+      removed.push(`Cursor       →  ${cursorTarget}`);
+    }
+
+    // ── Copilot (standalone) ─────────────────────────────────────────
+    const copilotSkillsTarget = join(home, '.copilot', 'skills', skill.name, 'SKILL.md');
+    if (existsSync(copilotSkillsTarget)) {
+      unlinkSync(copilotSkillsTarget);
+      try { rmdirSync(dirname(copilotSkillsTarget)); } catch { /* not empty */ }
+      removed.push(`Copilot      →  ${copilotSkillsTarget}`);
+    }
+
+    // ── GitHub Copilot ───────────────────────────────────────────────
+    const copilotTarget = join('.github', 'copilot-instructions.md');
+    const marker = `<!-- ${skill.name}-skill -->`;
+    if (existsSync(copilotTarget)) {
+      const existing = readFileSync(copilotTarget, 'utf-8');
+      if (existing.includes(marker)) {
+        const beforeIdx = existing.indexOf(marker);
+        const afterIdx = existing.indexOf(marker, beforeIdx + marker.length);
+        if (afterIdx !== -1) {
+          const before = existing.slice(0, beforeIdx);
+          const tail = existing.slice(afterIdx + marker.length);
+          const newContent = (before + tail).trim();
+          if (newContent) {
+            writeFileSync(copilotTarget, newContent + '\n', 'utf-8');
+          } else {
+            unlinkSync(copilotTarget);
+          }
+          removed.push(`GitHub Copilot  →  ${copilotTarget} (${skill.name})`);
+        }
+      }
+    }
   }
 
   // ── Summary ──────────────────────────────────────────────────────────

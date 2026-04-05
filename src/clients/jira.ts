@@ -1,13 +1,19 @@
 import type { HttpClient } from '../http.js';
 import { adfToMarkdown } from '../preprocessing/adf-to-text.js';
+import { textToAdf } from '../preprocessing/text-to-adf.js';
 import type { DeploymentType } from '../types/common.js';
 import type {
+  JiraAddCommentResult,
   JiraCloudSearchResponse,
   JiraComment,
+  JiraCreateIssueInput,
+  JiraCreateIssueResult,
   JiraIssue,
   JiraRawIssue,
   JiraSearchResult,
   JiraServerSearchResponse,
+  JiraTransition,
+  JiraUpdateIssueInput,
 } from '../types/jira.js';
 
 const DEFAULT_FIELDS = [
@@ -31,6 +37,11 @@ interface GetIssueOptions {
 export interface JiraClient {
   search(jql: string, opts?: SearchOptions): Promise<JiraSearchResult>;
   getIssue(issueKey: string, opts?: GetIssueOptions): Promise<JiraIssue>;
+  createIssue(input: JiraCreateIssueInput): Promise<JiraCreateIssueResult>;
+  updateIssue(issueKey: string, input: JiraUpdateIssueInput): Promise<void>;
+  addComment(issueKey: string, body: string): Promise<JiraAddCommentResult>;
+  getTransitions(issueKey: string): Promise<JiraTransition[]>;
+  transitionIssue(issueKey: string, transitionId: string, opts?: { comment?: string; resolution?: string }): Promise<void>;
 }
 
 function extractString(value: unknown): string | null {
@@ -175,6 +186,186 @@ export function createJiraClient(http: HttpClient, baseUrl: string, deployment: 
       }
 
       return issue;
+    },
+
+    async createIssue(input: JiraCreateIssueInput): Promise<JiraCreateIssueResult> {
+      const apiVersion = deployment === 'cloud' ? '3' : '2';
+
+      const fields: Record<string, unknown> = {
+        project: { key: input.projectKey },
+        issuetype: { name: input.issueType },
+        summary: input.summary,
+      };
+
+      if (input.description) {
+        fields.description = deployment === 'cloud'
+          ? textToAdf(input.description)
+          : input.description;
+      }
+
+      if (input.assignee) {
+        fields.assignee = deployment === 'cloud'
+          ? { accountId: input.assignee }
+          : { name: input.assignee };
+      }
+
+      if (input.priority) {
+        fields.priority = { name: input.priority };
+      }
+
+      if (input.labels?.length) {
+        fields.labels = input.labels;
+      }
+
+      if (input.components?.length) {
+        fields.components = input.components.map(name => ({ name }));
+      }
+
+      if (input.parentKey) {
+        fields.parent = { key: input.parentKey };
+      }
+
+      const response = await http.request<{ id: string; key: string; self: string }>({
+        method: 'POST',
+        path: `/rest/api/${apiVersion}/issue`,
+        body: { fields },
+      });
+
+      return {
+        key: response.key,
+        id: response.id,
+        url: `${baseUrl}/browse/${response.key}`,
+      };
+    },
+
+    async updateIssue(issueKey: string, input: JiraUpdateIssueInput): Promise<void> {
+      const apiVersion = deployment === 'cloud' ? '3' : '2';
+
+      const fields: Record<string, unknown> = {};
+      const update: Record<string, unknown[]> = {};
+
+      if (input.summary !== undefined) {
+        fields.summary = input.summary;
+      }
+
+      if (input.description !== undefined) {
+        fields.description = deployment === 'cloud'
+          ? textToAdf(input.description)
+          : input.description;
+      }
+
+      if (input.assignee !== undefined) {
+        fields.assignee = deployment === 'cloud'
+          ? { accountId: input.assignee }
+          : { name: input.assignee };
+      }
+
+      if (input.priority !== undefined) {
+        fields.priority = { name: input.priority };
+      }
+
+      if (input.labels !== undefined) {
+        fields.labels = input.labels;
+      }
+
+      if (input.components !== undefined) {
+        fields.components = input.components.map(name => ({ name }));
+      }
+
+      // Incremental label operations use the "update" field
+      if (input.addLabels?.length) {
+        update.labels = [...(update.labels ?? []), ...input.addLabels.map(l => ({ add: l }))];
+      }
+      if (input.removeLabels?.length) {
+        update.labels = [...(update.labels ?? []), ...input.removeLabels.map(l => ({ remove: l }))];
+      }
+
+      const body: Record<string, unknown> = {};
+      if (Object.keys(fields).length > 0) body.fields = fields;
+      if (Object.keys(update).length > 0) body.update = update;
+
+      await http.request<void>({
+        method: 'PUT',
+        path: `/rest/api/${apiVersion}/issue/${issueKey}`,
+        body,
+      });
+    },
+
+    async addComment(issueKey: string, body: string): Promise<JiraAddCommentResult> {
+      const apiVersion = deployment === 'cloud' ? '3' : '2';
+
+      const requestBody = deployment === 'cloud'
+        ? { body: textToAdf(body) }
+        : { body };
+
+      const response = await http.request<Record<string, unknown>>({
+        method: 'POST',
+        path: `/rest/api/${apiVersion}/issue/${issueKey}/comment`,
+        body: requestBody,
+      });
+
+      return {
+        id: String(response.id ?? ''),
+        body: deployment === 'cloud' && typeof response.body === 'object'
+          ? adfToMarkdown(response.body)
+          : String(response.body ?? ''),
+        author: extractString(response.author) ?? 'Unknown',
+        created: String(response.created ?? ''),
+      };
+    },
+
+    async getTransitions(issueKey: string): Promise<JiraTransition[]> {
+      const apiVersion = deployment === 'cloud' ? '3' : '2';
+
+      const response = await http.request<{ transitions: Array<Record<string, unknown>> }>({
+        method: 'GET',
+        path: `/rest/api/${apiVersion}/issue/${issueKey}/transitions`,
+      });
+
+      return response.transitions.map(t => {
+        const to = t.to as Record<string, unknown> | undefined;
+        const statusCategory = to?.statusCategory as Record<string, unknown> | undefined;
+        return {
+          id: String(t.id ?? ''),
+          name: String(t.name ?? ''),
+          to: {
+            id: String(to?.id ?? ''),
+            name: String(to?.name ?? ''),
+            statusCategory: String(statusCategory?.key ?? ''),
+          },
+        };
+      });
+    },
+
+    async transitionIssue(
+      issueKey: string,
+      transitionId: string,
+      opts: { comment?: string; resolution?: string } = {},
+    ): Promise<void> {
+      const apiVersion = deployment === 'cloud' ? '3' : '2';
+
+      const body: Record<string, unknown> = {
+        transition: { id: transitionId },
+      };
+
+      if (opts.resolution) {
+        body.fields = { resolution: { name: opts.resolution } };
+      }
+
+      if (opts.comment) {
+        const commentBody = deployment === 'cloud'
+          ? { body: textToAdf(opts.comment) }
+          : { body: opts.comment };
+        body.update = {
+          comment: [{ add: commentBody }],
+        };
+      }
+
+      await http.request<void>({
+        method: 'POST',
+        path: `/rest/api/${apiVersion}/issue/${issueKey}/transitions`,
+        body,
+      });
     },
   };
 }

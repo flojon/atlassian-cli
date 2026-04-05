@@ -111,3 +111,27 @@ export interface ConfluenceRawAttachmentResponse {
   start: number;
   _links?: { next?: string };
 }
+
+// Write operation types
+
+export interface ConfluenceCreatePageInput {
+  spaceKey: string;
+  title: string;
+  body: string;
+  parentId?: string;
+  format?: 'markdown' | 'storage';
+}
+
+export interface ConfluenceCreatePageResult {
+  id: string;
+  title: string;
+  version: number;
+  url: string;
+}
+
+export interface ConfluenceAddCommentResult {
+  id: string;
+  body: string;
+  author: string;
+  created: string;
+}

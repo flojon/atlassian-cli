@@ -1,8 +1,12 @@
 import type { HttpClient } from '../http.js';
 import { htmlToMarkdown } from '../preprocessing/html-to-markdown.js';
+import { markdownToStorage } from '../preprocessing/markdown-to-storage.js';
 import type { DeploymentType } from '../types/common.js';
 import type {
+  ConfluenceAddCommentResult,
   ConfluenceAttachment,
+  ConfluenceCreatePageInput,
+  ConfluenceCreatePageResult,
   ConfluencePage,
   ConfluenceRawAttachmentResponse,
   ConfluenceRawPage,
@@ -29,6 +33,9 @@ export interface ConfluenceClient {
   getPage(opts: GetPageOptions): Promise<ConfluencePage>;
   getAttachments(pageId: string): Promise<ConfluenceAttachment[]>;
   downloadAttachment(downloadPath: string, destPath: string): Promise<void>;
+  createPage(input: ConfluenceCreatePageInput): Promise<ConfluenceCreatePageResult>;
+  updatePage(pageId: string, body: string, opts?: { title?: string; format?: 'markdown' | 'storage'; version?: number }): Promise<ConfluenceCreatePageResult>;
+  addComment(pageId: string, body: string, opts?: { parentCommentId?: string }): Promise<ConfluenceAddCommentResult>;
 }
 
 const CQL_OPERATORS = /[=~><]|AND|OR|NOT|IN\s*\(|currentUser\(\)/i;
@@ -272,6 +279,128 @@ export function createConfluenceClient(
         ? downloadPath.slice(baseUrl.length)
         : downloadPath;
       await http.downloadToFile(relativePath, destPath);
+    },
+
+    async createPage(input: ConfluenceCreatePageInput): Promise<ConfluenceCreatePageResult> {
+      const storageBody = input.format === 'storage'
+        ? input.body
+        : markdownToStorage(input.body);
+
+      const requestBody: Record<string, unknown> = {
+        type: 'page',
+        title: input.title,
+        space: { key: input.spaceKey },
+        body: {
+          storage: {
+            value: storageBody,
+            representation: 'storage',
+          },
+        },
+      };
+
+      if (input.parentId) {
+        requestBody.ancestors = [{ id: input.parentId }];
+      }
+
+      const response = await http.request<ConfluenceRawPage>({
+        method: 'POST',
+        path: `${apiPrefix}/content`,
+        body: requestBody,
+      });
+
+      return {
+        id: response.id,
+        title: response.title,
+        version: response.version?.number ?? 1,
+        url: buildPageUrl(baseUrl, response, deployment),
+      };
+    },
+
+    async updatePage(
+      pageId: string,
+      body: string,
+      opts: { title?: string; format?: 'markdown' | 'storage'; version?: number } = {},
+    ): Promise<ConfluenceCreatePageResult> {
+      const storageBody = opts.format === 'storage'
+        ? body
+        : markdownToStorage(body);
+
+      // If version not provided, fetch current page to get it
+      let version = opts.version;
+      let currentTitle = opts.title;
+      if (version === undefined || currentTitle === undefined) {
+        const current = await http.request<ConfluenceRawPage>({
+          method: 'GET',
+          path: `${apiPrefix}/content/${pageId}`,
+          query: { expand: 'version' },
+        });
+        if (version === undefined) {
+          version = (current.version?.number ?? 0) + 1;
+        }
+        if (currentTitle === undefined) {
+          currentTitle = current.title;
+        }
+      }
+
+      const requestBody = {
+        type: 'page',
+        title: currentTitle,
+        body: {
+          storage: {
+            value: storageBody,
+            representation: 'storage',
+          },
+        },
+        version: { number: version },
+      };
+
+      const response = await http.request<ConfluenceRawPage>({
+        method: 'PUT',
+        path: `${apiPrefix}/content/${pageId}`,
+        body: requestBody,
+      });
+
+      return {
+        id: response.id,
+        title: response.title,
+        version: response.version?.number ?? version,
+        url: buildPageUrl(baseUrl, response, deployment),
+      };
+    },
+
+    async addComment(
+      pageId: string,
+      body: string,
+      opts: { parentCommentId?: string } = {},
+    ): Promise<ConfluenceAddCommentResult> {
+      const requestBody: Record<string, unknown> = {
+        type: 'comment',
+        container: { id: pageId, type: 'page' },
+        body: {
+          storage: {
+            value: `<p>${body}</p>`,
+            representation: 'storage',
+          },
+        },
+      };
+
+      if (opts.parentCommentId) {
+        requestBody.ancestors = [{ id: opts.parentCommentId }];
+      }
+
+      const response = await http.request<Record<string, unknown>>({
+        method: 'POST',
+        path: `${apiPrefix}/content`,
+        body: requestBody,
+      });
+
+      const version = response.version as Record<string, unknown> | undefined;
+      return {
+        id: String(response.id ?? ''),
+        body,
+        author: (version?.by as Record<string, unknown>)?.displayName as string ?? 'Unknown',
+        created: (version?.when as string) ?? '',
+      };
     },
   };
 }

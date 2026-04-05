@@ -1,3 +1,4 @@
+import { createInterface } from 'node:readline';
 import chalk from 'chalk';
 import { CliError } from './errors.js';
 
@@ -40,6 +41,34 @@ export function outputError(error: unknown, ctx: OutputContext): void {
     const message = error instanceof Error ? error.message : String(error);
     process.stderr.write(chalk.red('Error: ') + message + '\n');
   }
+}
+
+// Read body text from stdin (used when body argument is "-")
+export async function readStdin(): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+  }
+  return Buffer.concat(chunks).toString('utf-8').trim();
+}
+
+// Resolve body argument: if "-", read from stdin; otherwise return as-is
+export async function resolveBody(body: string): Promise<string> {
+  return body === '-' ? readStdin() : body;
+}
+
+// Confirmation prompt for destructive operations
+export async function confirm(message: string): Promise<boolean> {
+  if (!process.stdin.isTTY) {
+    return false;
+  }
+  const rl = createInterface({ input: process.stdin, output: process.stderr });
+  return new Promise(resolve => {
+    rl.question(`${chalk.yellow(message)} [y/N] `, answer => {
+      rl.close();
+      resolve(answer.trim().toLowerCase() === 'y');
+    });
+  });
 }
 
 // Simple table formatter for human output

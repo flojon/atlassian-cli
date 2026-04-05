@@ -2,30 +2,44 @@
 
 ## Project Overview
 
-**atlassian-cli** (`atl`) is a TypeScript CLI for Jira and Confluence that serves as a lightweight alternative to the [mcp-atlassian](https://github.com/sooperset/mcp-atlassian) MCP server. Phase 1 replicates the 4 most-used read-only tools; write commands and additional tools are planned.
+**atlassian-cli** (`atl`) is a TypeScript CLI for Jira and Confluence that serves as a lightweight alternative to the [mcp-atlassian](https://github.com/sooperset/mcp-atlassian) MCP server. Phase 1 implemented read-only tools; Phase 2 added write operations.
 
-The original MCP server has 73 tools (49 Jira + 24 Confluence). This CLI currently implements 5 Atlassian commands + 2 utility commands:
+The original MCP server has 73 tools (49 Jira + 24 Confluence). This CLI currently implements 12 Atlassian commands + 2 utility commands:
+
+**Jira (7 commands):**
 - `atl jira search` — JQL search
 - `atl jira get-issue` — Full issue details with comments
+- `atl jira create-issue` — Create a new issue
+- `atl jira update-issue` — Update issue fields
+- `atl jira add-comment` — Add a comment to an issue
+- `atl jira get-transitions` — List available workflow transitions
+- `atl jira transition-issue` — Transition an issue to a new status
+
+**Confluence (6 commands):**
 - `atl confluence search` — CQL/text search
 - `atl confluence get-page` — Page content by ID or title+space (layout-aware, with image extraction)
 - `atl confluence download-attachments` — Download page attachments to local directory
-- `atl install` — Install AI agent skill files (Claude Code, Cursor, Copilot)
-- `atl uninstall` — Remove installed skill files
+- `atl confluence create-page` — Create a new page (markdown or storage format)
+- `atl confluence update-page` — Update page content
+- `atl confluence add-comment` — Add a comment to a page
+
+**Utility:**
+- `atl install --skills` — Install AI agent skill files (Claude Code, Cursor, Copilot)
+- `atl uninstall --skills` — Remove installed skill files
 
 ## Tech Stack
 
 - **Language:** TypeScript (ES2022, NodeNext modules, strict mode)
 - **Runtime:** Node.js >= 22 (uses native `fetch`, no HTTP library)
 - **CLI framework:** Commander.js
-- **Content conversion:** Turndown (HTML to Markdown), custom ADF-to-Markdown parser
+- **Content conversion:** Turndown (HTML to Markdown), custom ADF-to-Markdown parser, text-to-ADF (write), markdown-to-storage (write)
 - **Output styling:** Chalk
 - **No test framework yet**
 
 ## Build & Run
 
 ```bash
-npm run build          # tsc → dist/ + copies SKILL.md into dist
+npm run build          # tsc → dist/ + copies skill files into dist
 npm run dev            # tsc --watch (does NOT copy skills)
 npm start              # node dist/bin/atl.js
 node dist/bin/atl.js   # direct invocation
@@ -60,16 +74,23 @@ src/
     confluence.ts                 # Confluence data models
   preprocessing/
     adf-to-text.ts                # Atlassian Document Format → Markdown
+    text-to-adf.ts                # Plain text → ADF (for Jira Cloud writes)
     html-to-markdown.ts           # HTML → Markdown with layout/macro/image handling
+    markdown-to-storage.ts        # Markdown → Confluence storage XHTML (for writes)
   clients/
     jira.ts                       # Jira API client (Cloud v3 / Server v2)
     confluence.ts                 # Confluence API client
   commands/
     jira/
-      search.ts, get-issue.ts, index.ts
+      search.ts, get-issue.ts, create-issue.ts, update-issue.ts,
+      add-comment.ts, get-transitions.ts, transition-issue.ts, index.ts
     confluence/
-      search.ts, get-page.ts, download-attachments.ts, index.ts
-  skills/atl/SKILL.md             # Unified skill file bundled for AI agents
+      search.ts, get-page.ts, download-attachments.ts,
+      create-page.ts, update-page.ts, add-comment.ts, index.ts
+  skills/
+    atl/SKILL.md                  # Parent skill (routing + overview)
+    atl-jira/SKILL.md             # Jira commands skill
+    atl-confluence/SKILL.md       # Confluence commands skill
 .claude/skills/                   # Claude Code skill definitions (dev only)
 ```
 
@@ -99,15 +120,20 @@ JIRA_PERSONAL_TOKEN=...
 # Optional: JIRA_SSL_VERIFY=false / CONFLUENCE_SSL_VERIFY=false
 ```
 
-## Skill Installer (`atl install` / `atl uninstall`)
+## Skill Installer (`atl install --skills` / `atl uninstall --skills`)
 
-The CLI can install a unified skill file (`src/skills/atl/SKILL.md`) into AI agent directories so agents know how to use `atl`. Targets:
-- **Claude Code** → `~/.claude/skills/atl/SKILL.md`
-- **Cursor** → `~/.cursor/rules/atl.md`
-- **Copilot (standalone)** → `~/.copilot/skills/atl/SKILL.md`
-- **GitHub Copilot** → appends to `.github/copilot-instructions.md` (with `<!-- atl-skill -->` markers for idempotent updates)
+The CLI installs three modular skill files into AI agent directories:
+- **`atl`** — parent skill (routing + overview)
+- **`atl-jira`** — all Jira commands with syntax and examples
+- **`atl-confluence`** — all Confluence commands with syntax and examples
 
-The installer (`src/installer.ts`) locates the bundled SKILL.md relative to its own compiled path (`dist/src/skills/atl/SKILL.md`). The `copy-skills` build step ensures it's there.
+Targets per skill:
+- **Claude Code** → `~/.claude/skills/<name>/SKILL.md`
+- **Cursor** → `~/.cursor/rules/<name>.md`
+- **Copilot (standalone)** → `~/.copilot/skills/<name>/SKILL.md`
+- **GitHub Copilot** → appends to `.github/copilot-instructions.md` (with `<!-- <name>-skill -->` markers)
+
+The installer (`src/installer.ts`) locates bundled skill files relative to its own compiled path. The `copy-skills` build step copies all three to `dist/`.
 
 ## Adding New Commands
 
@@ -120,8 +146,8 @@ The installer (`src/installer.ts`) locates the bundled SKILL.md relative to its 
 
 Follow existing patterns: normalize API responses, handle Cloud/Server differences in the client layer, use `formatOutput()` for display.
 
-## Planned Features (Roadmap)
+## Planned Features (Phase 3 Roadmap)
 
-- **Jira:** create-issue, update-issue, transition, add-comment, get-sprint-issues
-- **Confluence:** create-page, update-page, get-page-tree
+- **Jira:** list-projects, list-boards, list-sprints, get-sprint-issues, link-issues, delete-issue
+- **Confluence:** get-children, get-page-tree, delete-page, get-labels/add-label, get-page-history
 - **Infra:** `atl configure` wizard, config file (~/.config/atl/config.json), OAuth 2.0

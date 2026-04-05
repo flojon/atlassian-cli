@@ -59,3 +59,47 @@ export interface JiraRawIssue {
   self: string;
   fields: Record<string, unknown>;
 }
+
+// Write operation types
+
+export interface JiraCreateIssueInput {
+  projectKey: string;
+  issueType: string;
+  summary: string;
+  description?: string;
+  assignee?: string;
+  priority?: string;
+  labels?: string[];
+  components?: string[];
+  parentKey?: string;
+}
+
+export interface JiraCreateIssueResult {
+  key: string;
+  id: string;
+  url: string;
+}
+
+export interface JiraUpdateIssueInput {
+  summary?: string;
+  description?: string;
+  assignee?: string;
+  priority?: string;
+  labels?: string[];
+  addLabels?: string[];
+  removeLabels?: string[];
+  components?: string[];
+}
+
+export interface JiraTransition {
+  id: string;
+  name: string;
+  to: { id: string; name: string; statusCategory: string };
+}
+
+export interface JiraAddCommentResult {
+  id: string;
+  body: string;
+  author: string;
+  created: string;
+}

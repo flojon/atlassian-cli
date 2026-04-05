@@ -17,7 +17,7 @@ program
     'Setup:\n' +
     '  Set JIRA_URL + auth env vars for Jira\n' +
     '  Set CONFLUENCE_URL + auth env vars for Confluence\n' +
-    '  Run `atl install` to install AI agent skill files'
+    '  Run `atl install --skills` to install AI agent skill files'
   )
   .option('--json', 'Force JSON output')
   .option('--no-color', 'Disable colored output');
@@ -27,16 +27,30 @@ registerConfluenceCommands(program);
 
 program
   .command('install')
-  .description('Install atl skill files into AI agent directories (Claude Code, Copilot, Cursor)')
-  .action(() => {
-    installSkills();
+  .description('Install components (use --skills to install AI agent skill files)')
+  .option('--skills', 'Install AI agent skill files (Claude Code, Copilot, Cursor)')
+  .action((opts: { skills?: boolean }) => {
+    if (opts.skills) {
+      installSkills();
+    } else {
+      console.log('Usage: atl install --skills\n');
+      console.log('Options:');
+      console.log('  --skills    Install AI agent skill files (Claude Code, Copilot, Cursor)');
+    }
   });
 
 program
   .command('uninstall')
-  .description('Remove atl skill files from AI agent directories')
-  .action(() => {
-    uninstallSkills();
+  .description('Uninstall components (use --skills to remove AI agent skill files)')
+  .option('--skills', 'Remove AI agent skill files')
+  .action((opts: { skills?: boolean }) => {
+    if (opts.skills) {
+      uninstallSkills();
+    } else {
+      console.log('Usage: atl uninstall --skills\n');
+      console.log('Options:');
+      console.log('  --skills    Remove AI agent skill files');
+    }
   });
 
 // Global error handler

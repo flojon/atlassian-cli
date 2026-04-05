@@ -27,7 +27,7 @@ Built as a faster, leaner alternative to MCP servers for letting AI agents (like
 | | MCP Server | CLI + Skills |
 |---|---|---|
 | **Token cost** | ~3,000+ tokens for tool schemas per turn | ~200 tokens per skill file, loaded on demand |
-| **Setup** | Start server process, configure transport | Set env vars, run `npm link` |
+| **Setup** | Start server process, configure transport | Set env vars, `npm link`, `atl install --skills` |
 | **Latency** | Server init + JSON-RPC overhead | Direct process spawn (~50ms) |
 | **Tool selection** | Agent picks from 73 tools | Agent reads relevant skill file only |
 | **Dependencies** | Python + FastMCP + atlassian-python-api | Node.js + 3 npm packages |
@@ -88,6 +88,19 @@ export CONFLUENCE_PERSONAL_TOKEN=your_pat
 ```
 
 The CLI auto-detects Cloud vs Server based on the URL (`atlassian.net` = Cloud, anything else = Server/DC).
+
+### Install AI Agent Skills (optional)
+
+```bash
+atl install --skills    # Install skill files for Claude Code, Cursor, Copilot
+```
+
+This installs three skill files that teach AI agents how to use `atl`:
+- **`atl`** — parent skill (routing + overview)
+- **`atl-jira`** — all Jira commands with syntax and examples
+- **`atl-confluence`** — all Confluence commands with syntax and examples
+
+Agents load only the relevant skill file, keeping token usage minimal.
 
 ### Verify
 
@@ -225,6 +238,103 @@ Comments (2)
 
 ---
 
+#### `atl jira create-issue`
+
+Create a new Jira issue.
+
+```bash
+# Simple bug
+atl jira create-issue --project PROJ --type Bug --summary "Login page 500 error"
+
+# Full options
+atl jira create-issue -p PROJ -t Story -s "Add dark mode" -d "Users want a dark theme" \
+  --labels ui,frontend --priority Medium --assignee john.doe
+
+# Sub-task
+atl jira create-issue -p PROJ -t Sub-task -s "Write tests" --parent PROJ-100
+```
+
+**Options:**
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `-p, --project <key>` | Yes | Project key |
+| `-t, --type <type>` | Yes | Issue type (Bug, Task, Story, etc.) |
+| `-s, --summary <text>` | Yes | Issue summary |
+| `-d, --description <text>` | No | Issue description |
+| `--assignee <user>` | No | Assignee (accountId for Cloud, username for Server) |
+| `--priority <name>` | No | Priority (High, Medium, Low) |
+| `--labels <labels>` | No | Comma-separated labels |
+| `--components <comps>` | No | Comma-separated component names |
+| `--parent <key>` | No | Parent issue key (for sub-tasks) |
+
+---
+
+#### `atl jira update-issue <key>`
+
+Update fields on an existing issue.
+
+```bash
+atl jira update-issue PROJ-123 --priority High
+atl jira update-issue PROJ-123 --add-labels urgent,backend
+atl jira update-issue PROJ-123 --assignee john.doe --summary "Updated title"
+```
+
+**Options:**
+
+| Flag | Description |
+|------|-------------|
+| `-s, --summary <text>` | New summary |
+| `-d, --description <text>` | New description |
+| `--assignee <user>` | New assignee |
+| `--priority <name>` | New priority |
+| `--labels <labels>` | Replace all labels |
+| `--add-labels <labels>` | Add labels incrementally |
+| `--remove-labels <labels>` | Remove labels incrementally |
+| `--components <comps>` | Replace all components |
+
+---
+
+#### `atl jira add-comment <key> <body>`
+
+Add a comment to an issue. Use `-` as body to read from stdin.
+
+```bash
+atl jira add-comment PROJ-123 "Investigating the root cause"
+echo "Long analysis..." | atl jira add-comment PROJ-123 -
+```
+
+---
+
+#### `atl jira get-transitions <key>`
+
+Get available workflow transitions for an issue.
+
+```bash
+atl jira get-transitions PROJ-123
+```
+
+---
+
+#### `atl jira transition-issue <key>`
+
+Transition an issue to a new status. Accepts transition name (fuzzy matched) or ID.
+
+```bash
+atl jira transition-issue PROJ-123 --transition "In Progress"
+atl jira transition-issue PROJ-123 --transition Done --resolution Fixed --comment "Deployed"
+```
+
+**Options:**
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--transition <nameOrId>` | Yes | Transition name or ID |
+| `--comment <text>` | No | Add comment with the transition |
+| `--resolution <name>` | No | Set resolution (Done, Fixed, etc.) |
+
+---
+
 ### Confluence
 
 #### `atl confluence search <query>`
@@ -324,6 +434,76 @@ You must provide either `--id` or both `--title` and `--space`.
 
 ---
 
+#### `atl confluence create-page`
+
+Create a new Confluence page.
+
+```bash
+# Basic page
+atl confluence create-page --space DEV --title "API Guide" --body "# API Guide\n\nContent..."
+
+# Child page
+atl confluence create-page -s DEV --title "Sub Page" -b "Content" --parent-id 12345
+
+# From stdin (pipe a markdown file)
+cat README.md | atl confluence create-page -s DEV --title "README" -b -
+
+# Raw storage format
+atl confluence create-page -s DEV --title "Raw" -b "<h1>Hello</h1>" --format storage
+```
+
+**Options:**
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `-s, --space <key>` | Yes | Space key |
+| `--title <title>` | Yes | Page title |
+| `-b, --body <content>` | Yes | Page body (use `-` to read from stdin) |
+| `--parent-id <id>` | No | Parent page ID |
+| `--format <format>` | No | `markdown` (default) or `storage` |
+
+---
+
+#### `atl confluence update-page`
+
+Update an existing Confluence page. Auto-detects current version if not specified.
+
+```bash
+atl confluence update-page --id 12345 --body "# Updated\n\nNew content"
+atl confluence update-page --id 12345 --title "New Title" --body "Content"
+cat doc.md | atl confluence update-page --id 12345 -b -
+```
+
+**Options:**
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--id <pageId>` | Yes | Page ID |
+| `-b, --body <content>` | Yes | New body (use `-` for stdin) |
+| `--title <title>` | No | New page title |
+| `--format <format>` | No | `markdown` (default) or `storage` |
+| `--version <n>` | No | Version number (auto-detected) |
+
+---
+
+#### `atl confluence add-comment <body>`
+
+Add a comment to a Confluence page. Use `-` as body to read from stdin.
+
+```bash
+atl confluence add-comment "Great docs!" --page-id 12345
+atl confluence add-comment "Reply" --page-id 12345 --parent-comment-id 67890
+```
+
+**Options:**
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--page-id <id>` | Yes | Page ID |
+| `--parent-comment-id <id>` | No | Parent comment ID (for threaded replies) |
+
+---
+
 ## Output Modes
 
 The CLI has two output modes:
@@ -388,23 +568,28 @@ The same pattern applies to Confluence — replace `JIRA_` with `CONFLUENCE_`.
 
 ---
 
-## Claude Code Integration
+## AI Agent Integration
 
-The repo includes [Claude Code skill files](https://docs.anthropic.com/en/docs/claude-code/skills) in `.claude/skills/` that teach Claude Code how to use each command:
+Install skill files so AI agents know how to use `atl`:
 
-```
-.claude/skills/
-├── jira-search.md
-├── jira-get-issue.md
-├── confluence-search.md
-└── confluence-get-page.md
+```bash
+atl install --skills    # Install for Claude Code, Cursor, Copilot
+atl uninstall --skills  # Remove skill files
 ```
 
-Each skill file documents the command syntax, all options, and the full JSON output schema. When Claude Code needs to interact with Jira or Confluence, it reads the relevant skill file and runs the CLI command — no MCP server needed.
+This installs three modular skill files:
 
-### How it works with agents
+| Skill | Scope | Installed to |
+|-------|-------|-------------|
+| `atl` | Routing + overview | `~/.claude/skills/atl/SKILL.md` |
+| `atl-jira` | All Jira commands | `~/.claude/skills/atl-jira/SKILL.md` |
+| `atl-confluence` | All Confluence commands | `~/.claude/skills/atl-confluence/SKILL.md` |
 
-1. Agent reads `.claude/skills/jira-search.md` to learn the command syntax
+Agents load only the relevant skill (Jira or Confluence) on demand, not all commands at once.
+
+### How it works
+
+1. Agent sees a Jira-related request, loads the `atl-jira` skill
 2. Agent runs `atl jira search "project = PROJ AND assignee = currentUser()"`
 3. CLI returns JSON (auto-detected because stdout is piped)
 4. Agent parses the JSON and continues reasoning
@@ -471,19 +656,22 @@ atlassian-cli/
 
 ## Roadmap
 
-The MVP covers the 4 most common operations. Future tools will follow the same pattern:
+Phase 1 (read-only) and Phase 2 (write operations) are complete. Phase 3 will add:
 
-**Jira (next):**
-- `atl jira create-issue` — Create issues
-- `atl jira update-issue` — Update issue fields
-- `atl jira transition` — Change issue status
-- `atl jira add-comment` — Add comments
+**Jira:**
+- `atl jira list-projects` — List accessible projects
+- `atl jira list-boards` — List agile boards
+- `atl jira list-sprints` — List sprints for a board
 - `atl jira get-sprint-issues` — Sprint board view
+- `atl jira link-issues` — Link two issues
+- `atl jira delete-issue` — Delete an issue
 
-**Confluence (next):**
-- `atl confluence create-page` — Create pages
-- `atl confluence update-page` — Update page content
+**Confluence:**
+- `atl confluence get-children` — Get child pages
 - `atl confluence get-page-tree` — Space page hierarchy
+- `atl confluence delete-page` — Delete a page
+- `atl confluence get-labels` / `add-label` — Label management
+- `atl confluence get-page-history` — Version history
 
 **Infrastructure:**
 - `atl configure` — Interactive setup wizard
