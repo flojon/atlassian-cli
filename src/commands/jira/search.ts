@@ -37,13 +37,12 @@ export function registerSearchCommand(jira: Command): void {
     .option('-f, --fields <fields>', 'Comma-separated fields to return')
     .option('-l, --limit <n>', 'Maximum results to return', '20')
     .option('--offset <n>', 'Start at this result index', '0')
-    .option('--json', 'Output as JSON')
-    .action(async (jql: string, opts: { fields?: string; limit: string; offset: string; json?: boolean }) => {
+    .action(async (jql: string, opts: { fields?: string; limit: string; offset: string }, command: Command) => {
       const config = loadConfig();
       const jiraConfig = requireJiraConfig(config);
       const http = createHttpClient(jiraConfig);
       const client = createJiraClient(http, jiraConfig.baseUrl, jiraConfig.deployment);
-      const ctx = detectOutputMode(opts.json);
+      const ctx = detectOutputMode(command.optsWithGlobals().json);
 
       const fields = opts.fields ? opts.fields.split(',').map(f => f.trim()) : undefined;
       const result = await client.search(jql, {

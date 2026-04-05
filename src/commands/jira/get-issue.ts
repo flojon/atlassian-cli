@@ -47,13 +47,12 @@ export function registerGetIssueCommand(jira: Command): void {
     .description('Get full details of a Jira issue')
     .option('-f, --fields <fields>', 'Comma-separated fields to return')
     .option('-c, --comments <n>', 'Max comments to include', '10')
-    .option('--json', 'Output as JSON')
-    .action(async (key: string, opts: { fields?: string; comments: string; json?: boolean }) => {
+    .action(async (key: string, opts: { fields?: string; comments: string }, command: Command) => {
       const config = loadConfig();
       const jiraConfig = requireJiraConfig(config);
       const http = createHttpClient(jiraConfig);
       const client = createJiraClient(http, jiraConfig.baseUrl, jiraConfig.deployment);
-      const ctx = detectOutputMode(opts.json);
+      const ctx = detectOutputMode(command.optsWithGlobals().json);
 
       const fields = opts.fields ? opts.fields.split(',').map(f => f.trim()) : undefined;
       const issue = await client.getIssue(key, {

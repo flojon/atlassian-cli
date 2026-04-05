@@ -36,13 +36,12 @@ export function registerSearchCommand(confluence: Command): void {
     .option('-l, --limit <n>', 'Maximum results to return', '10')
     .option('--offset <n>', 'Start at this result index', '0')
     .option('-s, --spaces <spaces>', 'Comma-separated space keys to filter')
-    .option('--json', 'Output as JSON')
-    .action(async (query: string, opts: { limit: string; offset: string; spaces?: string; json?: boolean }) => {
+    .action(async (query: string, opts: { limit: string; offset: string; spaces?: string }, command: Command) => {
       const config = loadConfig();
       const confConfig = requireConfluenceConfig(config);
       const http = createHttpClient(confConfig);
       const client = createConfluenceClient(http, confConfig.baseUrl, confConfig.deployment);
-      const ctx = detectOutputMode(opts.json);
+      const ctx = detectOutputMode(command.optsWithGlobals().json);
 
       const spaces = opts.spaces ? opts.spaces.split(',').map(s => s.trim()) : undefined;
       const result = await client.search(query, {

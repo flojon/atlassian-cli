@@ -66,13 +66,12 @@ export function registerDownloadAttachmentsCommand(confluence: Command): void {
     .requiredOption('--page-id <id>', 'Page ID')
     .option('--output-dir <dir>', 'Output directory')
     .option('--filter <type>', 'Filter type: images, documents, or all', 'all')
-    .option('--json', 'Output as JSON')
-    .action(async (opts: { pageId: string; outputDir?: string; filter: string; json?: boolean }) => {
+    .action(async (opts: { pageId: string; outputDir?: string; filter: string }, command: Command) => {
       const config = loadConfig();
       const confConfig = requireConfluenceConfig(config);
       const http = createHttpClient(confConfig);
       const client = createConfluenceClient(http, confConfig.baseUrl, confConfig.deployment);
-      const ctx = detectOutputMode(opts.json);
+      const ctx = detectOutputMode(command.optsWithGlobals().json);
 
       const outputDir = opts.outputDir ?? join(tmpdir(), 'confluence-attachments', opts.pageId);
 

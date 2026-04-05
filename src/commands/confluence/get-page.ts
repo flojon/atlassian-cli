@@ -39,13 +39,12 @@ export function registerGetPageCommand(confluence: Command): void {
     .option('--title <title>', 'Page title (use with --space)')
     .option('--space <spaceKey>', 'Space key (use with --title)')
     .option('--raw', 'Return raw HTML instead of markdown')
-    .option('--json', 'Output as JSON')
-    .action(async (opts: { id?: string; title?: string; space?: string; raw?: boolean; json?: boolean }) => {
+    .action(async (opts: { id?: string; title?: string; space?: string; raw?: boolean }, command: Command) => {
       const config = loadConfig();
       const confConfig = requireConfluenceConfig(config);
       const http = createHttpClient(confConfig);
       const client = createConfluenceClient(http, confConfig.baseUrl, confConfig.deployment);
-      const ctx = detectOutputMode(opts.json);
+      const ctx = detectOutputMode(command.optsWithGlobals().json);
 
       const page = await client.getPage({
         id: opts.id,
