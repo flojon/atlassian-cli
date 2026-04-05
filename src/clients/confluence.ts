@@ -84,19 +84,18 @@ function normalizeSearchEntry(
   entry: ConfluenceRawSearchResponse['results'][number],
   baseUrl: string,
 ): ConfluenceSearchEntry {
-  // Cloud nests page data under `content`; Server/DC puts it at the top level
-  const content = entry.content ?? entry;
+  const content = entry.content;
   return {
-    id: content.id ?? '',
-    title: content.title ?? '',
-    type: content.type ?? 'page',
-    spaceKey: content.space?.key ?? '',
-    spaceName: content.space?.name ?? '',
-    lastModified: content.history?.lastUpdated?.when ?? '',
+    id: content?.id ?? '',
+    title: content?.title ?? entry.title ?? '',
+    type: content?.type ?? 'page',
+    spaceKey: content?.space?.key ?? '',
+    spaceName: content?.space?.name ?? '',
+    lastModified: content?.history?.lastUpdated?.when ?? '',
     excerpt: entry.excerpt ? htmlToMarkdown(entry.excerpt).markdown : '',
     url: entry.url
       ? `${baseUrl}${entry.url}`
-      : (content._links?.webui ? `${baseUrl}${content._links.webui}` : ''),
+      : (content?._links?.webui ? `${baseUrl}${content._links.webui}` : ''),
   };
 }
 
@@ -162,7 +161,7 @@ export function createConfluenceClient(
 
       const response = await http.request<ConfluenceRawSearchResponse>({
         method: 'GET',
-        path: `${apiPrefix}/content/search`,
+        path: `${apiPrefix}/search`,
         query: {
           cql,
           limit,
@@ -172,7 +171,7 @@ export function createConfluenceClient(
       });
 
       const results = response.results
-        .filter(r => r.content || r.id) // Keep entries with content (Cloud) or top-level id (Server/DC)
+        .filter(r => r.content)
         .map(r => normalizeSearchEntry(r, baseUrl));
 
       return {
