@@ -6,13 +6,13 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const SKILLS = [
+export const SKILLS = [
   { name: 'atl', dir: 'atl' },
   { name: 'atl-jira', dir: 'atl-jira' },
   { name: 'atl-confluence', dir: 'atl-confluence' },
 ];
 
-function getSkillSource(skillDir: string): string {
+export function getSkillSource(skillDir: string): string {
   const candidate = join(__dirname, 'skills', skillDir, 'SKILL.md');
   if (existsSync(candidate)) {
     return candidate;
@@ -29,7 +29,16 @@ function ensureDir(dir: string): void {
   }
 }
 
-export function installSkills(): void {
+export interface InstallResult {
+  installed: string[];
+  skipped: string[];
+}
+
+/**
+ * Install skills to home-directory targets (Claude Code, Cursor, Copilot standalone).
+ * Does NOT install to .github/copilot-instructions.md (requires CWD to be a project root).
+ */
+export function installSkillsToHome(): InstallResult {
   const home = homedir();
   const installed: string[] = [];
   const skipped: string[] = [];
@@ -39,7 +48,7 @@ export function installSkills(): void {
     try {
       sourcePath = getSkillSource(skill.dir);
     } catch (e) {
-      console.error(`Error: ${(e as Error).message}`);
+      skipped.push((e as Error).message);
       continue;
     }
 
@@ -64,8 +73,27 @@ export function installSkills(): void {
     ensureDir(dirname(copilotSkillsTarget));
     copyFileSync(sourcePath, copilotSkillsTarget);
     installed.push(`Copilot      →  ${copilotSkillsTarget}`);
+  }
 
-    // ── GitHub Copilot (append to .github/copilot-instructions.md) ──
+  return { installed, skipped };
+}
+
+/**
+ * Install skills to the GitHub Copilot project-scoped target (.github/copilot-instructions.md).
+ * Only works when CWD is a project root with a .github/ directory.
+ */
+function installSkillsToGitHubCopilot(): InstallResult {
+  const installed: string[] = [];
+  const skipped: string[] = [];
+
+  for (const skill of SKILLS) {
+    let sourcePath: string;
+    try {
+      sourcePath = getSkillSource(skill.dir);
+    } catch {
+      continue;
+    }
+
     const copilotDir = '.github';
     const copilotTarget = join(copilotDir, 'copilot-instructions.md');
     const marker = `<!-- ${skill.name}-skill -->`;
@@ -97,7 +125,20 @@ export function installSkills(): void {
     }
   }
 
-  // ── Summary ───────────────────────────────────────────────────��──────
+  return { installed, skipped };
+}
+
+/**
+ * Full install: all targets including project-scoped GitHub Copilot.
+ * Used by `atl install --skills`.
+ */
+export function installSkills(): void {
+  const homeResult = installSkillsToHome();
+  const ghResult = installSkillsToGitHubCopilot();
+
+  const installed = [...homeResult.installed, ...ghResult.installed];
+  const skipped = [...homeResult.skipped, ...ghResult.skipped];
+
   console.log('\natl skills installed:');
   for (const msg of installed) {
     console.log(`  ✓  ${msg}`);
