@@ -1,6 +1,7 @@
 import type { Command } from 'commander';
 import { registerSearchCommand } from './search.js';
 import { registerGetIssueCommand } from './get-issue.js';
+import { registerDownloadAttachmentsCommand } from './download-attachments.js';
 import { registerCreateIssueCommand } from './create-issue.js';
 import { registerUpdateIssueCommand } from './update-issue.js';
 import { registerAddCommentCommand } from './add-comment.js';
@@ -14,6 +15,7 @@ export function registerJiraCommands(program: Command): void {
 
   registerSearchCommand(jira);
   registerGetIssueCommand(jira);
+  registerDownloadAttachmentsCommand(jira);
   registerCreateIssueCommand(jira);
   registerUpdateIssueCommand(jira);
   registerAddCommentCommand(jira);

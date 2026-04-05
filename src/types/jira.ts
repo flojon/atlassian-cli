@@ -13,6 +13,33 @@ export interface JiraComment {
   updated: string;
 }
 
+export interface JiraImageInfo {
+  filename: string;
+  url: string;
+  mediaType?: string;
+  fileSize?: number;
+}
+
+export interface JiraAttachment {
+  id: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+  downloadUrl: string;
+  created?: string;
+  author?: string;
+}
+
+export interface JiraRawAttachment {
+  id: string;
+  filename: string;
+  size: number;
+  mimeType: string;
+  created: string;
+  content: string;
+  author?: { displayName?: string };
+}
+
 export interface JiraIssue {
   key: string;
   id: string;
@@ -29,6 +56,8 @@ export interface JiraIssue {
   labels: string[];
   components: string[];
   comments: JiraComment[];
+  images: JiraImageInfo[];
+  attachments: JiraAttachment[];
   url: string;
 }
 

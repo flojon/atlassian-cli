@@ -1,14 +1,17 @@
 import type { HttpClient } from '../http.js';
-import { adfToMarkdown } from '../preprocessing/adf-to-text.js';
+import { adfToMarkdown, adfToMarkdownWithImages } from '../preprocessing/adf-to-text.js';
 import { textToAdf } from '../preprocessing/text-to-adf.js';
 import type { DeploymentType } from '../types/common.js';
 import type {
   JiraAddCommentResult,
+  JiraAttachment,
   JiraCloudSearchResponse,
   JiraComment,
   JiraCreateIssueInput,
   JiraCreateIssueResult,
+  JiraImageInfo,
   JiraIssue,
+  JiraRawAttachment,
   JiraRawIssue,
   JiraSearchResult,
   JiraServerSearchResponse,
@@ -19,7 +22,7 @@ import type {
 const DEFAULT_FIELDS = [
   'summary', 'status', 'assignee', 'reporter', 'priority',
   'issuetype', 'labels', 'components', 'created', 'updated',
-  'description', 'comment',
+  'description', 'comment', 'attachment',
 ];
 
 interface SearchOptions {
@@ -37,6 +40,8 @@ interface GetIssueOptions {
 export interface JiraClient {
   search(jql: string, opts?: SearchOptions): Promise<JiraSearchResult>;
   getIssue(issueKey: string, opts?: GetIssueOptions): Promise<JiraIssue>;
+  getAttachments(issueKey: string): Promise<JiraAttachment[]>;
+  downloadAttachment(url: string, destPath: string): Promise<void>;
   createIssue(input: JiraCreateIssueInput): Promise<JiraCreateIssueResult>;
   updateIssue(issueKey: string, input: JiraUpdateIssueInput): Promise<void>;
   addComment(issueKey: string, body: string): Promise<JiraAddCommentResult>;
@@ -54,18 +59,57 @@ function extractString(value: unknown): string | null {
   return null;
 }
 
+function normalizeAttachments(raw: unknown[]): JiraAttachment[] {
+  return (raw as JiraRawAttachment[]).map(a => ({
+    id: a.id,
+    filename: a.filename,
+    mimeType: a.mimeType,
+    size: a.size,
+    downloadUrl: a.content,
+    created: a.created,
+    author: a.author?.displayName,
+  }));
+}
+
 function normalizeIssue(raw: JiraRawIssue, baseUrl: string, deployment: DeploymentType): JiraIssue {
   const f = raw.fields;
 
-  // Process description
+  // Process attachments
+  const rawAttachments = (f.attachment as JiraRawAttachment[] | undefined) ?? [];
+  const attachments = normalizeAttachments(rawAttachments);
+
+  // Process description (with image extraction for Cloud ADF)
   let description: string | null = null;
+  let images: JiraImageInfo[] = [];
   if (f.description) {
     if (deployment === 'cloud' && typeof f.description === 'object') {
-      // Cloud: ADF format
-      description = adfToMarkdown(f.description);
+      // Cloud: ADF format — resolve media IDs via attachment context
+      const result = adfToMarkdownWithImages(f.description, {
+        attachments: attachments.map(a => ({
+          id: a.id,
+          filename: a.filename,
+          downloadUrl: a.downloadUrl,
+          mimeType: a.mimeType,
+        })),
+      });
+      description = result.markdown;
+      images = result.images;
     } else if (typeof f.description === 'string') {
       // Server: plain text or wiki markup
       description = f.description;
+    }
+  }
+
+  // Add image-type attachments not already discovered by the ADF parser
+  const discoveredFilenames = new Set(images.map(img => img.filename));
+  for (const att of attachments) {
+    if (att.mimeType.startsWith('image/') && !discoveredFilenames.has(att.filename)) {
+      images.push({
+        filename: att.filename,
+        url: att.downloadUrl,
+        mediaType: att.mimeType,
+        fileSize: att.size,
+      });
     }
   }
 
@@ -112,6 +156,8 @@ function normalizeIssue(raw: JiraRawIssue, baseUrl: string, deployment: Deployme
       c => (c.name as string) ?? '',
     ),
     comments,
+    images,
+    attachments,
     url: `${baseUrl}/browse/${raw.key}`,
   };
 }
@@ -186,6 +232,22 @@ export function createJiraClient(http: HttpClient, baseUrl: string, deployment: 
       }
 
       return issue;
+    },
+
+    async getAttachments(issueKey: string): Promise<JiraAttachment[]> {
+      const apiVersion = deployment === 'cloud' ? '3' : '2';
+      const raw = await http.request<JiraRawIssue>({
+        method: 'GET',
+        path: `/rest/api/${apiVersion}/issue/${issueKey}`,
+        query: { fields: 'attachment' },
+      });
+      const rawAttachments = (raw.fields.attachment as JiraRawAttachment[] | undefined) ?? [];
+      return normalizeAttachments(rawAttachments);
+    },
+
+    async downloadAttachment(url: string, destPath: string): Promise<void> {
+      const relativePath = url.startsWith(baseUrl) ? url.slice(baseUrl.length) : url;
+      await http.downloadToFile(relativePath, destPath);
     },
 
     async createIssue(input: JiraCreateIssueInput): Promise<JiraCreateIssueResult> {

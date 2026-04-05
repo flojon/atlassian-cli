@@ -28,6 +28,24 @@ function formatHuman(issue: JiraIssue): string {
     lines.push(issue.description);
   }
 
+  if (issue.attachments.length > 0) {
+    lines.push('');
+    lines.push(chalk.bold(`Attachments (${issue.attachments.length})`));
+    for (const att of issue.attachments) {
+      const size = att.size > 0 ? ` (${(att.size / 1024).toFixed(1)} KB)` : '';
+      lines.push(`  ${att.filename}${size}  ${chalk.dim(att.mimeType)}`);
+    }
+  }
+
+  if (issue.images.length > 0) {
+    lines.push('');
+    lines.push(chalk.bold(`Images (${issue.images.length})`));
+    for (const img of issue.images) {
+      const size = img.fileSize ? ` (${(img.fileSize / 1024).toFixed(1)} KB)` : '';
+      lines.push(`  ${img.filename}${size} — ${chalk.dim(img.url)}`);
+    }
+  }
+
   if (issue.comments.length > 0) {
     lines.push('');
     lines.push(chalk.bold(`Comments (${issue.comments.length})`));

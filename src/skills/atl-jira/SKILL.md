@@ -98,7 +98,88 @@ atl jira get-issue PROJ-123 --comments 5
 atl jira get-issue PROJ-123 --fields summary,status,description
 ```
 
-**JSON output:** Same schema as search results, with full `description` and `comments` array.
+**JSON output:**
+
+```json
+{
+  "key": "PROJ-123",
+  "id": "10001",
+  "summary": "Issue title",
+  "status": "In Progress",
+  "statusCategory": "indeterminate",
+  "issueType": "Story",
+  "priority": "Medium",
+  "assignee": "John Doe",
+  "reporter": "Jane Smith",
+  "created": "2024-01-15T10:30:00.000+0000",
+  "updated": "2024-01-16T14:20:00.000+0000",
+  "description": "Description in markdown with ![image.png](url) references",
+  "labels": ["feature"],
+  "components": ["Frontend"],
+  "comments": [],
+  "images": [
+    {
+      "filename": "screenshot.png",
+      "url": "https://company.atlassian.net/rest/api/3/attachment/content/10001",
+      "mediaType": "image/png",
+      "fileSize": 245760
+    }
+  ],
+  "attachments": [
+    {
+      "id": "10001",
+      "filename": "screenshot.png",
+      "mimeType": "image/png",
+      "size": 245760,
+      "downloadUrl": "https://company.atlassian.net/rest/api/3/attachment/content/10001",
+      "created": "2024-01-15T10:30:00.000+0000",
+      "author": "Jane Smith"
+    }
+  ],
+  "url": "https://company.atlassian.net/browse/PROJ-123"
+}
+```
+
+- `images` — Image files found in the description or attached to the issue. Use these for visual analysis.
+- `attachments` — All attachments (images + documents). Full metadata including download URLs.
+
+---
+
+## `atl jira download-attachments`
+
+Download attachments from a Jira issue to a local directory.
+
+```bash
+atl jira download-attachments --issue-key <ISSUE-KEY> [--output-dir <dir>] [--filter <type>] [--json]
+```
+
+**Options:**
+- `--issue-key <key>` — **(required)** Jira issue key
+- `--output-dir <dir>` — output directory (default: `/tmp/jira-attachments/{issueKey}/`)
+- `--filter <type>` — `images`, `documents`, or `all` (default: `all`)
+- `--json` — force JSON output
+
+**Examples:**
+```bash
+atl jira download-attachments --issue-key PROJ-123 --filter images
+atl jira download-attachments --issue-key PROJ-123 --output-dir ./assets --json
+```
+
+**JSON output:**
+```json
+{
+  "issueKey": "PROJ-123",
+  "outputDir": "/tmp/jira-attachments/PROJ-123",
+  "downloaded": [
+    {
+      "filename": "screenshot.png",
+      "path": "/tmp/jira-attachments/PROJ-123/screenshot.png",
+      "mimeType": "image/png",
+      "size": 245760
+    }
+  ]
+}
+```
 
 ---
 
@@ -269,4 +350,19 @@ atl jira add-comment PROJ-124 "Root cause: missing index on search_logs table"
 
 # 4. Resolve
 atl jira transition-issue PROJ-124 --transition Done --resolution Fixed --comment "Deployed in v2.3.1"
+```
+
+---
+
+## Workflow: Analyze an issue with images
+
+```bash
+# 1. Get issue content (includes images and attachments metadata)
+atl jira get-issue PROJ-123 --json
+
+# 2. If images[] is non-empty, download them for analysis
+atl jira download-attachments --issue-key PROJ-123 --filter images --json
+
+# 3. Read each downloaded image file to analyze visual content
+# 4. Synthesize text content + image analysis into a comprehensive summary
 ```

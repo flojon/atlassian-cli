@@ -4,11 +4,12 @@
 
 **atlassian-cli** (`atl`) is a TypeScript CLI for Jira and Confluence that serves as a lightweight alternative to the [mcp-atlassian](https://github.com/sooperset/mcp-atlassian) MCP server. Phase 1 implemented read-only tools; Phase 2 added write operations.
 
-The original MCP server has 73 tools (49 Jira + 24 Confluence). This CLI currently implements 12 Atlassian commands + 2 utility commands:
+The original MCP server has 73 tools (49 Jira + 24 Confluence). This CLI currently implements 13 Atlassian commands + 2 utility commands:
 
-**Jira (7 commands):**
+**Jira (8 commands):**
 - `atl jira search` — JQL search
-- `atl jira get-issue` — Full issue details with comments
+- `atl jira get-issue` — Full issue details with comments, images, and attachments
+- `atl jira download-attachments` — Download issue attachments to local directory
 - `atl jira create-issue` — Create a new issue
 - `atl jira update-issue` — Update issue fields
 - `atl jira add-comment` — Add a comment to an issue
