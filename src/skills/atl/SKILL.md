@@ -225,8 +225,24 @@ atl confluence get-page --id 12345 --raw
       "url": "https://confluence.example.com/download/attachments/12345/architecture-diagram.png",
       "width": 800,
       "height": 600,
-      "mediaType": "application/octet-stream",
+      "mediaType": "image/png",
       "fileSize": 245760
+    }
+  ],
+  "attachments": [
+    {
+      "id": "att67890",
+      "title": "architecture-diagram.png",
+      "mediaType": "image/png",
+      "fileSize": 245760,
+      "downloadUrl": "https://confluence.example.com/download/attachments/12345/architecture-diagram.png"
+    },
+    {
+      "id": "att67891",
+      "title": "setup-guide.zip",
+      "mediaType": "application/zip",
+      "fileSize": 1048576,
+      "downloadUrl": "https://confluence.example.com/download/attachments/12345/setup-guide.zip"
     }
   ],
   "version": 5,

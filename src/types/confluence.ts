@@ -22,6 +22,7 @@ export interface ConfluencePage {
   spaceName: string;
   body: string;
   images: ConfluenceImageInfo[];
+  attachments: ConfluenceAttachment[];
   version: number;
   lastModified: string;
   lastModifiedBy: string | null;

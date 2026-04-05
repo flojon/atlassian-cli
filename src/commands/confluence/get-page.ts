@@ -28,6 +28,17 @@ function formatHuman(page: ConfluencePage): string {
     }
   }
 
+  // Show non-image attachments (images are already listed above)
+  const nonImageAttachments = page.attachments.filter(a => !a.mediaType.startsWith('image/'));
+  if (nonImageAttachments.length > 0) {
+    lines.push('');
+    lines.push(chalk.bold(`Attachments (${nonImageAttachments.length}):`));
+    for (const att of nonImageAttachments) {
+      const size = att.fileSize > 0 ? ` (${(att.fileSize / 1024).toFixed(1)} KB)` : '';
+      lines.push(`  - ${att.title} [${att.mediaType}]${size} — ${att.downloadUrl}`);
+    }
+  }
+
   return lines.join('\n');
 }
 

@@ -106,6 +106,18 @@ function normalizePage(
   convertToMarkdown: boolean,
 ): ConfluencePage {
   const bodyHtml = raw.body?.storage?.value ?? raw.body?.view?.value ?? '';
+  const rawAttachments = raw.children?.attachment?.results ?? [];
+
+  // Build the full attachments list from the API (source of truth)
+  const attachments: import('../types/confluence.js').ConfluenceAttachment[] = rawAttachments.map(a => ({
+    id: a.id,
+    title: a.title,
+    mediaType: a.extensions?.mediaType ?? 'application/octet-stream',
+    fileSize: a.extensions?.fileSize ?? 0,
+    downloadUrl: a._links?.download
+      ? `${baseUrl}${a._links.download}`
+      : `${baseUrl}/download/attachments/${raw.id}/${encodeURIComponent(a.title)}`,
+  }));
 
   let body: string;
   let images: import('../types/confluence.js').ConfluenceImageInfo[] = [];
@@ -115,17 +127,26 @@ function normalizePage(
     body = result.markdown;
     images = result.images;
 
-    // Enrich images with attachment metadata if available
-    const attachments = raw.children?.attachment?.results ?? [];
+    // Enrich parser-discovered images with attachment metadata
     for (const img of images) {
       const match = attachments.find(a => a.title === img.filename);
       if (match) {
-        img.mediaType = match.extensions?.mediaType;
-        img.fileSize = match.extensions?.fileSize;
-        // Use the API-provided download link if available (more reliable)
-        if (match._links?.download) {
-          img.url = `${baseUrl}${match._links.download}`;
-        }
+        img.mediaType = match.mediaType;
+        img.fileSize = match.fileSize;
+        img.url = match.downloadUrl;
+      }
+    }
+
+    // Add any image-type attachments that the HTML parser missed
+    const discoveredFilenames = new Set(images.map(img => img.filename));
+    for (const att of attachments) {
+      if (att.mediaType.startsWith('image/') && !discoveredFilenames.has(att.title)) {
+        images.push({
+          filename: att.title,
+          url: att.downloadUrl,
+          mediaType: att.mediaType,
+          fileSize: att.fileSize,
+        });
       }
     }
   } else {
@@ -139,6 +160,7 @@ function normalizePage(
     spaceName: raw.space?.name ?? '',
     body,
     images,
+    attachments,
     version: raw.version?.number ?? 0,
     lastModified: raw.version?.when ?? '',
     lastModifiedBy: raw.version?.by?.displayName ?? null,
