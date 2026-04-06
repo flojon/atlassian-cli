@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { readFileSync } from 'fs';
 import { program } from 'commander';
 import { registerJiraCommands } from '../src/commands/jira/index.js';
 import { registerConfluenceCommands } from '../src/commands/confluence/index.js';
@@ -7,9 +8,11 @@ import { installSkills, uninstallSkills } from '../src/installer.js';
 import { detectOutputMode, outputError } from '../src/output.js';
 import { CliError } from '../src/errors.js';
 
+const pkg = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf-8'));
+
 program
   .name('atl')
-  .version('0.1.0')
+  .version(pkg.version)
   .description(
     'CLI for Atlassian Jira and Confluence — Cloud and Server/Data Center\n\n' +
     'Every command accepts --json (machine-readable output).\n' +
