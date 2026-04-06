@@ -1,6 +1,6 @@
 {
   "name": "@sahajamit/atlassian-cli",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "CLI for Atlassian Jira and Confluence — Cloud and Server/Data Center",
   "type": "module",
   "license": "MIT",
