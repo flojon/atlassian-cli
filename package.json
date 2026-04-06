@@ -1,6 +1,6 @@
 {
   "name": "@sahajamit/atlassian-cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "CLI for Atlassian Jira and Confluence — Cloud and Server/Data Center",
   "type": "module",
   "license": "MIT",
@@ -10,7 +10,13 @@
     "type": "git",
     "url": "https://github.com/sahajamit/atlassian-cli"
   },
-  "keywords": ["atlassian", "jira", "confluence", "cli", "devtools"],
+  "keywords": [
+    "atlassian",
+    "jira",
+    "confluence",
+    "cli",
+    "devtools"
+  ],
   "bin": {
     "atl": "./dist/bin/atl.js"
   },
