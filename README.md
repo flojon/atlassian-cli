@@ -10,6 +10,14 @@ Built as a faster, leaner alternative to MCP servers for letting AI agents (like
 
 📦 **npm:** https://www.npmjs.com/package/@sahajamit/atlassian-cli
 
+### Install
+
+```bash
+npm install -g @sahajamit/atlassian-cli
+```
+
+Then jump to [Quick Start](#quick-start) to set env vars and verify, or skim [Why We Built This](#why-we-built-this) and [Beyond Plain Text](#beyond-plain-text) first.
+
 ---
 
 ## Why We Built This
