@@ -51,13 +51,31 @@ Entry point: `bin/atl.ts` → compiles to `dist/bin/atl.js`
 ## Publishing to npm
 
 The package is scoped as `@sahajamit/atlassian-cli`. Key npm config in `package.json`:
-- `files: ["dist"]` — only the `dist/` directory is published
+- `files: ["dist", "LICENSE", "README.md"]` — only these are published
 - `prepublishOnly: "npm run build"` — auto-builds before publish
-- `build` includes `copy-skills` step that copies `src/skills/atl/SKILL.md` into `dist/`
+- `build` includes `copy-skills` step that copies all three `src/skills/*/SKILL.md` files into `dist/`
 
 ```bash
 npm publish --access public    # publish to npm registry
 ```
+
+### ⚠️ Pending version bump for next publish
+
+The currently-checked-in source has accumulated changes since the last published version (`0.2.1` on npm) that **must be reflected in a version bump on the next `npm publish`**. Bump to **`0.3.0`** (minor) before publishing — these are behavior changes for existing consumers, not just docs:
+
+- **`postinstall` script removed.** Previously `npm install @sahajamit/atlassian-cli` auto-dropped skill files into `~/.claude/skills`, `~/.cursor/rules`, `~/.copilot/skills`. It no longer does — users must run `atl install --skills` manually. Existing consumers upgrading will silently lose the auto-install.
+- **Path-traversal hardening in `download-attachments`** (Jira + Confluence). Attachments with traversal-style filenames (`../foo`) are now rejected or basename-stripped instead of writing outside the target dir. Edge-case behavior change.
+- **`JIRA_SSL_VERIFY` / `CONFLUENCE_SSL_VERIFY` env vars removed.** They were dead code (Node native `fetch` doesn't honor them), but anyone with these set will see them silently ignored. Workaround documented: `NODE_TLS_REJECT_UNAUTHORIZED=0`.
+- `package.json` metadata updates (`repository.url`, `homepage`, `bugs`, `files` whitelist) — cosmetic but tied to the public-repo release.
+- New `LICENSE` file shipped in the tarball.
+
+**Before the next `npm publish`:**
+1. Bump `version` in `package.json` to `0.3.0`.
+2. Skim this list and add any since-then changes to release notes.
+3. Run `npm pack --dry-run` and confirm no `postinstall` artifacts and that LICENSE + README ship.
+4. Then `npm publish --access public`.
+
+Remove this section once `0.3.0` (or later) has shipped.
 
 ## Project Structure
 
@@ -118,8 +136,9 @@ JIRA_URL=https://jira.internal.company.com
 JIRA_PERSONAL_TOKEN=...
 
 # Same pattern for CONFLUENCE_URL, CONFLUENCE_USERNAME, etc.
-# Optional: JIRA_SSL_VERIFY=false / CONFLUENCE_SSL_VERIFY=false
 ```
+
+For Server/DC instances with self-signed certs, run with `NODE_TLS_REJECT_UNAUTHORIZED=0` (process-wide; Node native `fetch` does not support per-request TLS bypass).
 
 ## Skill Installer (`atl install --skills` / `atl uninstall --skills`)
 

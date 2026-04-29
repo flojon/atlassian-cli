@@ -63,14 +63,10 @@ function loadServiceConfig(
     serviceName,
   );
 
-  const sslVerifyEnv = process.env[`${serviceName.toUpperCase()}_SSL_VERIFY`];
-  const sslVerify = sslVerifyEnv !== 'false';
-
   return {
     baseUrl: normalizeUrl(url),
     auth,
     deployment,
-    sslVerify,
   };
 }
 

@@ -1,4 +1,4 @@
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { Command } from 'commander';
 import chalk from 'chalk';
@@ -81,10 +81,14 @@ export function registerDownloadAttachmentsCommand(confluence: Command): void {
       const downloaded: DownloadResult['downloaded'] = [];
 
       for (const attachment of attachments) {
-        const destPath = join(outputDir, attachment.title);
+        const safeName = basename(attachment.title);
+        if (!safeName || safeName === '.' || safeName === '..') {
+          throw new Error(`Refusing to download attachment with unsafe filename: ${attachment.title}`);
+        }
+        const destPath = join(outputDir, safeName);
         await client.downloadAttachment(attachment.downloadUrl, destPath);
         downloaded.push({
-          filename: attachment.title,
+          filename: safeName,
           path: destPath,
           mediaType: attachment.mediaType,
           fileSize: attachment.fileSize,

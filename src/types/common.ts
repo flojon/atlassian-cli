@@ -8,7 +8,6 @@ export interface ServiceConfig {
   baseUrl: string;
   auth: AuthMethod;
   deployment: DeploymentType;
-  sslVerify: boolean;
 }
 
 export interface Config {

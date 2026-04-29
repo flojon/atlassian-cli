@@ -5,10 +5,13 @@
   "type": "module",
   "license": "MIT",
   "author": "Amit Rawat <sahajamit@gmail.com> (https://amitrawat.dev/)",
-  "homepage": "https://amitrawat.dev/",
+  "homepage": "https://github.com/sahajamit/atlassian-cli#readme",
   "repository": {
     "type": "git",
-    "url": "https://github.com/sahajamit/atlassian-cli"
+    "url": "git+https://github.com/sahajamit/atlassian-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/sahajamit/atlassian-cli/issues"
   },
   "keywords": [
     "atlassian",
@@ -21,12 +24,13 @@
     "atl": "./dist/bin/atl.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "LICENSE",
+    "README.md"
   ],
   "scripts": {
     "build": "tsc && npm run copy-skills",
     "copy-skills": "mkdir -p dist/src/skills/atl dist/src/skills/atl-jira dist/src/skills/atl-confluence && cp src/skills/atl/SKILL.md dist/src/skills/atl/SKILL.md && cp src/skills/atl-jira/SKILL.md dist/src/skills/atl-jira/SKILL.md && cp src/skills/atl-confluence/SKILL.md dist/src/skills/atl-confluence/SKILL.md",
-    "postinstall": "node dist/src/postinstall.js || true",
     "dev": "tsc --watch",
     "start": "node dist/bin/atl.js",
     "prepublishOnly": "npm run build"

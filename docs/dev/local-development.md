@@ -13,7 +13,7 @@ This guide covers how to build, run, and test the `atl` CLI from source before p
 ### 1. Clone and install dependencies
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/sahajamit/atlassian-cli.git
 cd atlassian-cli
 npm install
 ```
@@ -54,12 +54,13 @@ CONFLUENCE_PERSONAL_TOKEN=your_personal_access_token
 
 Generate a PAT from your Atlassian Server profile page under **Personal Access Tokens**.
 
-**Optional — disable SSL verification (self-signed certs):**
+**Self-signed certs:** the CLI does not implement per-service TLS bypass — Node's native `fetch` doesn't support a per-request `rejectUnauthorized`. If you must connect to a Server/DC instance with a self-signed cert, run the process with `NODE_TLS_REJECT_UNAUTHORIZED=0`:
 
 ```bash
-JIRA_SSL_VERIFY=false
-CONFLUENCE_SSL_VERIFY=false
+NODE_TLS_REJECT_UNAUTHORIZED=0 atl jira search "project = PROJ"
 ```
+
+This applies to the entire Node process, so use it deliberately (e.g. only when you trust the network path).
 
 ### 3. Load environment variables
 
@@ -237,7 +238,7 @@ None of the required environment variables (`JIRA_URL`, `CONFLUENCE_URL`) are se
 
 ### SSL errors on Server/DC
 
-For instances with self-signed certificates, set `JIRA_SSL_VERIFY=false` or `CONFLUENCE_SSL_VERIFY=false`.
+For instances with self-signed certificates, run with `NODE_TLS_REJECT_UNAUTHORIZED=0` (process-wide). See *Setup → Self-signed certs* above.
 
 ### Confluence search returns no results (Server/DC)
 
@@ -324,9 +325,87 @@ npm uninstall -g @sahajamit/atlassian-cli
 rm sahajamit-atlassian-cli-0.1.0.tgz
 ```
 
+## Project structure
+
+```
+atlassian-cli/
+├── bin/atl.ts                       # CLI entry point, commander setup
+├── src/
+│   ├── config.ts                    # Env var loading, Cloud vs Server detection
+│   ├── http.ts                      # HTTP client with auth (Basic / PAT) + file download
+│   ├── output.ts                    # JSON vs human-readable output (auto-detects TTY)
+│   ├── errors.ts                    # CliError, ConfigError, ApiError
+│   ├── installer.ts                 # Skill file installer for AI agents
+│   ├── types/
+│   │   ├── common.ts                # Auth, Config, ServiceConfig types
+│   │   ├── jira.ts                  # Jira data models
+│   │   └── confluence.ts            # Confluence data models
+│   ├── preprocessing/
+│   │   ├── adf-to-text.ts           # Atlassian Document Format → Markdown
+│   │   ├── text-to-adf.ts           # Plain text → ADF (for Jira Cloud writes)
+│   │   ├── html-to-markdown.ts      # HTML → Markdown with layout/macro/image handling
+│   │   └── markdown-to-storage.ts   # Markdown → Confluence storage XHTML (for writes)
+│   ├── clients/
+│   │   ├── jira.ts                  # Jira API client (Cloud v3 / Server v2)
+│   │   └── confluence.ts            # Confluence API client
+│   ├── commands/
+│   │   ├── jira/                    # search, get-issue, download-attachments, ...
+│   │   └── confluence/              # search, get-page, download-attachments, ...
+│   └── skills/
+│       ├── atl/SKILL.md             # Parent skill (routing + overview)
+│       ├── atl-jira/SKILL.md        # Jira commands skill
+│       └── atl-confluence/SKILL.md  # Confluence commands skill
+├── .claude/skills/                  # Claude Code skill definitions (dev only)
+├── docs/                            # Public-facing docs and dev guide
+└── tsconfig.json
+```
+
+### Architecture patterns
+
+- **Cloud vs Server/DC** is auto-detected from the URL (`atlassian.net` = Cloud). Cloud uses REST API v3 (Jira) with POST search; Server uses v2 with GET search. Clients handle the difference transparently.
+- **Auth:** Basic Auth (email + API token) for Cloud; PAT (Bearer token) preferred for Server/DC, Basic Auth as fallback.
+- **Content normalization:** raw API responses are normalized to unified types. Jira Cloud returns ADF (JSON), Server returns wiki markup — both converted to Markdown. Confluence HTML is converted via Turndown.
+- **Output mode:** auto-detects TTY for human-readable tables vs JSON for piped output. `--json` flag forces JSON.
+- **Factory pattern:** `createHttpClient()`, `createJiraClient()`, `createConfluenceClient()` — no classes, just functions returning objects.
+- **Error hierarchy:** `CliError` base → `ConfigError` (missing env vars) and `ApiError` (HTTP failures).
+
+## Adding new commands
+
+1. Add types to `src/types/jira.ts` or `src/types/confluence.ts`
+2. Add client method in `src/clients/jira.ts` or `src/clients/confluence.ts`
+3. Create command file in `src/commands/<service>/<command>.ts`
+4. Register in `src/commands/<service>/index.ts`
+5. Update the unified skill file in `src/skills/atl-<service>/SKILL.md`
+
+Follow existing patterns: normalize API responses, handle Cloud/Server differences in the client layer, use `formatOutput()` for display.
+
+## Roadmap
+
+Phase 1 (read-only) and Phase 2 (write operations) are complete. Phase 3 candidates:
+
+**Jira:**
+- `atl jira list-projects` — List accessible projects
+- `atl jira list-boards` — List agile boards
+- `atl jira list-sprints` — List sprints for a board
+- `atl jira get-sprint-issues` — Sprint board view
+- `atl jira link-issues` — Link two issues
+- `atl jira delete-issue` — Delete an issue
+
+**Confluence:**
+- `atl confluence get-children` — Get child pages
+- `atl confluence get-page-tree` — Space page hierarchy
+- `atl confluence delete-page` — Delete a page
+- `atl confluence get-labels` / `add-label` — Label management
+- `atl confluence get-page-history` — Version history
+
+**Infrastructure:**
+- `atl configure` — Interactive setup wizard
+- Config file support (`~/.config/atl/config.json`)
+- OAuth 2.0 support for Cloud
+
 ## Before Submitting a PR
 
 1. Ensure `npm run build` succeeds with no errors
 2. Test your changes against at least one deployment type (Cloud or Server/DC)
 3. Verify both human-readable and JSON output modes work
-4. If you added a new command, add a corresponding skill file in `.claude/skills/` and update `src/skills/atl/SKILL.md`
+4. If you added a new command, add a corresponding skill file in `.claude/skills/` and update `src/skills/atl-<service>/SKILL.md`

@@ -1,8 +1,14 @@
 # atl — Atlassian CLI
 
+[![npm version](https://img.shields.io/npm/v/@sahajamit/atlassian-cli.svg)](https://www.npmjs.com/package/@sahajamit/atlassian-cli)
+[![license](https://img.shields.io/npm/l/@sahajamit/atlassian-cli.svg)](./LICENSE)
+[![node](https://img.shields.io/node/v/@sahajamit/atlassian-cli.svg)](https://nodejs.org)
+
 A lightweight Node.js CLI for Atlassian Jira and Confluence. Works with both **Cloud** and **Server/Data Center** deployments.
 
-Built as a faster, leaner alternative to MCP servers for letting AI agents (like Claude Code) interact with Atlassian products.
+Built as a faster, leaner alternative to MCP servers for letting AI agents (like Claude Code, Cursor, Copilot) interact with Atlassian products.
+
+📦 **npm:** https://www.npmjs.com/package/@sahajamit/atlassian-cli
 
 ---
 
@@ -22,12 +28,12 @@ Built as a faster, leaner alternative to MCP servers for letting AI agents (like
 
 ### The CLI + Skills Approach
 
-`atl` takes a different approach: it's a plain CLI binary that Claude Code (or any agent) invokes directly via shell commands. Combined with Claude Code skills (markdown files that teach the agent how to use each command), this gives you:
+`atl` takes a different approach: it's a plain CLI binary that AI agents invoke directly via shell commands. Combined with skill files (markdown files that teach the agent how to use each command), this gives you:
 
 | | MCP Server | CLI + Skills |
 |---|---|---|
 | **Token cost** | ~3,000+ tokens for tool schemas per turn | ~200 tokens per skill file, loaded on demand |
-| **Setup** | Start server process, configure transport | Set env vars, `npm link`, `atl install --skills` |
+| **Setup** | Start server process, configure transport | Set env vars, `npm install -g`, `atl install --skills` |
 | **Latency** | Server init + JSON-RPC overhead | Direct process spawn (~50ms) |
 | **Tool selection** | Agent picks from 73 tools | Agent reads relevant skill file only |
 | **Dependencies** | Python + FastMCP + atlassian-python-api | Node.js + 3 npm packages |
@@ -43,7 +49,59 @@ MCP still makes sense when:
 - You need **all 73 tools** and want automatic tool discovery
 - Your agent framework **only supports MCP** (no shell access)
 
-For the common case — a developer using Claude Code to work with their team's Jira and Confluence — the CLI is simpler and cheaper.
+For the common case — a developer using an AI agent to work with their team's Jira and Confluence — the CLI is simpler and cheaper.
+
+---
+
+## Beyond Plain Text
+
+Most Atlassian-to-text tools just strip HTML and feed the agent a flat string. `atl` does two things differently that turn out to matter a lot for AI workflows:
+
+### Multimodal — images, not just words
+
+Jira issues and Confluence pages frequently carry the *real* information in screenshots, architecture diagrams, mockups, error stack-trace images, and whiteboard exports. A text-only extractor throws all that away.
+
+`atl` treats images as first-class output:
+
+- `atl jira get-issue` and `atl confluence get-page` return an `images[]` array alongside the text body, with filename, URL, mime type, width/height for every embedded image and image attachment.
+- `atl jira download-attachments --filter images` (and the Confluence equivalent) pulls them to local disk in one shot.
+- The bundled skill files explicitly instruct vision-capable AI agents (Claude, Cursor, Copilot) to detect non-empty `images[]`, download them, **and read them with vision** to build understanding before answering. The synthesized answer combines text *and* visual content.
+
+So a question like *"what's the proposed architecture in PROJ-456?"* doesn't fail just because the architecture lives in `architecture.png` rather than the issue description.
+
+```bash
+# Agent flow (this is what the skill file tells the agent to do)
+atl jira get-issue PROJ-456 --json                              # text + images[] metadata
+atl jira download-attachments --issue-key PROJ-456 --filter images --json
+# → agent reads each downloaded image with vision, synthesizes a complete answer
+```
+
+### Layout-aware Confluence rendering
+
+Confluence pages are stored in XHTML "storage format" with custom macros (`ac:layout-section`, `ac:structured-macro`, `ac:image`, etc.). Most tools convert this with a generic HTML stripper, which destroys:
+
+- **Multi-column layouts** — collapsed into a single linear blob, losing the side-by-side relationship between columns.
+- **Panels** (info / warning / note / tip) — flattened to plain paragraphs, losing severity and intent.
+- **Code blocks** — language tags stripped, indentation often mangled.
+- **Expand / collapse sections** — content either dropped or merged inline with no signal that it was hidden.
+- **Embedded images** — left as broken HTML or omitted entirely.
+
+`atl` ships [Turndown](https://github.com/mixmark-io/turndown) with a custom rule set (`src/preprocessing/html-to-markdown.ts`) that **preserves the layout signal**:
+
+| Confluence construct | Rendered as |
+|---|---|
+| `ac:layout-section` with multiple `ac:layout-cell` | Each column rendered sequentially with `<!-- Column 1 -->`, `<!-- Column 2 -->` markers so the agent (and you) can still tell columns apart |
+| `panel` / `info` / `warning` / `note` / `tip` macros | Labeled markdown blockquotes — `> **Warning: Title**\n> body` |
+| `code` macro | Fenced code block with language tag preserved (` ```python `) |
+| `expand` macro | HTML `<details><summary>title</summary>...</details>` |
+| `ac:image` with `ri:attachment` or `ri:url` | `![filename](url)` markdown image **and** collected into `images[]` for downstream download |
+| Confluence emoticons (`<img class="emoticon">`) | Their alt text inline (`:smile:`) |
+| Tables, headings, lists, links | Standard markdown |
+| Unknown `ac:structured-macro` | `[macro: name]` placeholder so nothing is silently dropped |
+
+The result is markdown that an AI agent can reason over with the **same structural cues a human reader gets** — "this is in a warning box," "this is the second column of a two-column layout," "this code is Python," "this section is collapsed by default." For long architecture pages with multi-column overviews and embedded diagrams, the difference between layout-aware and "just strip the tags" output is the difference between a useful summary and noise.
+
+Use `--raw` on `atl confluence get-page` if you want the original storage-format XHTML instead.
 
 ---
 
@@ -57,10 +115,13 @@ For the common case — a developer using Claude Code to work with their team's 
 ### Install
 
 ```bash
-git clone <repo-url> && cd atlassian-cli
-npm install
-npm run build
-npm link    # makes `atl` available globally
+npm install -g @sahajamit/atlassian-cli
+```
+
+Or run without installing:
+
+```bash
+npx @sahajamit/atlassian-cli --help
 ```
 
 ### Configure
@@ -68,6 +129,7 @@ npm link    # makes `atl` available globally
 Set environment variables for your Atlassian instance. You only need to configure the services you use (Jira, Confluence, or both).
 
 **Atlassian Cloud:**
+
 ```bash
 export JIRA_URL=https://your-company.atlassian.net
 export JIRA_USERNAME=your.email@company.com
@@ -79,6 +141,7 @@ export CONFLUENCE_API_TOKEN=your_api_token
 ```
 
 **Server / Data Center (on-prem):**
+
 ```bash
 export JIRA_URL=https://jira.yourcompany.com
 export JIRA_PERSONAL_TOKEN=your_pat           # Generated in Jira → Profile → Personal Access Tokens
@@ -102,6 +165,8 @@ This installs three skill files that teach AI agents how to use `atl`:
 
 Agents load only the relevant skill file, keeping token usage minimal.
 
+> Skill files are **not** auto-installed on `npm install`. You opt in by running `atl install --skills`. To remove them later: `atl uninstall --skills`.
+
 ### Verify
 
 ```bash
@@ -110,397 +175,33 @@ atl jira search "project = PROJ ORDER BY updated DESC" --limit 3
 
 ---
 
-## Tools
+## Commands
 
 ### Jira
 
-#### `atl jira search <jql>`
-
-Search issues using [JQL (Jira Query Language)](https://support.atlassian.com/jira-service-management-cloud/docs/use-advanced-search-with-jira-query-language-jql/).
-
-```bash
-# Find open bugs assigned to you
-atl jira search "project = PROJ AND type = Bug AND assignee = currentUser() AND status != Done"
-
-# Recently updated issues
-atl jira search "project = PROJ AND updated >= -7d ORDER BY updated DESC"
-
-# Issues by label
-atl jira search "project = PROJ AND labels = backend" --limit 50
-
-# Custom fields
-atl jira search "project = PROJ" --fields summary,status,customfield_10001
-```
-
-**Options:**
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `-l, --limit <n>` | 20 | Maximum results to return |
-| `--offset <n>` | 0 | Skip this many results (pagination) |
-| `-f, --fields <fields>` | core fields | Comma-separated field names |
-| `--json` | auto | Force JSON output |
-
-**Output (human):**
-```
-Found 42 issue(s) (more available)
-
-Key        Summary                          Status        Assignee      Priority
-─────────  ───────────────────────────────  ────────────  ────────────  ────────
-PROJ-101   Login page returns 500           In Progress   Jane Smith    High
-PROJ-98    Update API docs for v2           To Do         Unassigned    Medium
-PROJ-95    Add rate limiting to /search     Done          John Doe      Low
-```
-
-**Output (JSON):**
-```json
-{
-  "issues": [
-    {
-      "key": "PROJ-101",
-      "id": "10042",
-      "summary": "Login page returns 500",
-      "status": "In Progress",
-      "statusCategory": "indeterminate",
-      "issueType": "Bug",
-      "priority": "High",
-      "assignee": "Jane Smith",
-      "reporter": "Bob Wilson",
-      "created": "2024-01-15T10:30:00.000+0000",
-      "updated": "2024-01-16T14:20:00.000+0000",
-      "description": "When clicking login with SSO...",
-      "labels": ["backend", "urgent"],
-      "components": ["API"],
-      "comments": [],
-      "url": "https://company.atlassian.net/browse/PROJ-101"
-    }
-  ],
-  "total": 42,
-  "hasMore": true
-}
-```
-
----
-
-#### `atl jira get-issue <key>`
-
-Get full details of an issue including description and comments.
-
-```bash
-# Full issue details
-atl jira get-issue PROJ-123
-
-# Limit comments
-atl jira get-issue PROJ-123 --comments 5
-
-# Specific fields only
-atl jira get-issue PROJ-123 --fields summary,status,description
-```
-
-**Options:**
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `-c, --comments <n>` | 10 | Maximum comments to include |
-| `-f, --fields <fields>` | core fields | Comma-separated field names |
-| `--json` | auto | Force JSON output |
-
-**Output (human):**
-```
-PROJ-123  Fix authentication timeout on SSO login
-
-  Status:     In Progress
-  Type:       Bug
-  Priority:   High
-  Assignee:   Jane Smith
-  Reporter:   Bob Wilson
-  Labels:     backend, auth
-  Components: API, SSO
-  Created:    2024-01-15T10:30:00.000+0000
-  Updated:    2024-01-16T14:20:00.000+0000
-  URL:        https://company.atlassian.net/browse/PROJ-123
-
-Description
-The SSO login flow times out after 30 seconds when the IdP
-takes more than 10s to respond. We should increase the timeout
-and add a retry mechanism.
-
-Comments (2)
-
-  Bob Wilson — 2024-01-15T11:00:00.000+0000
-  Reproduced on staging. The timeout is hardcoded in auth-service.
-
-  Jane Smith — 2024-01-16T09:15:00.000+0000
-  PR is up: #456. Changed timeout to 60s with exponential backoff.
-```
-
-**Note on descriptions:** Jira Cloud stores descriptions in ADF (Atlassian Document Format). The CLI automatically converts ADF to markdown. Jira Server stores descriptions as wiki markup or plain text, which is returned as-is.
-
----
-
-#### `atl jira create-issue`
-
-Create a new Jira issue.
-
-```bash
-# Simple bug
-atl jira create-issue --project PROJ --type Bug --summary "Login page 500 error"
-
-# Full options
-atl jira create-issue -p PROJ -t Story -s "Add dark mode" -d "Users want a dark theme" \
-  --labels ui,frontend --priority Medium --assignee john.doe
-
-# Sub-task
-atl jira create-issue -p PROJ -t Sub-task -s "Write tests" --parent PROJ-100
-```
-
-**Options:**
-
-| Flag | Required | Description |
-|------|----------|-------------|
-| `-p, --project <key>` | Yes | Project key |
-| `-t, --type <type>` | Yes | Issue type (Bug, Task, Story, etc.) |
-| `-s, --summary <text>` | Yes | Issue summary |
-| `-d, --description <text>` | No | Issue description |
-| `--assignee <user>` | No | Assignee (accountId for Cloud, username for Server) |
-| `--priority <name>` | No | Priority (High, Medium, Low) |
-| `--labels <labels>` | No | Comma-separated labels |
-| `--components <comps>` | No | Comma-separated component names |
-| `--parent <key>` | No | Parent issue key (for sub-tasks) |
-
----
-
-#### `atl jira update-issue <key>`
-
-Update fields on an existing issue.
-
-```bash
-atl jira update-issue PROJ-123 --priority High
-atl jira update-issue PROJ-123 --add-labels urgent,backend
-atl jira update-issue PROJ-123 --assignee john.doe --summary "Updated title"
-```
-
-**Options:**
-
-| Flag | Description |
-|------|-------------|
-| `-s, --summary <text>` | New summary |
-| `-d, --description <text>` | New description |
-| `--assignee <user>` | New assignee |
-| `--priority <name>` | New priority |
-| `--labels <labels>` | Replace all labels |
-| `--add-labels <labels>` | Add labels incrementally |
-| `--remove-labels <labels>` | Remove labels incrementally |
-| `--components <comps>` | Replace all components |
-
----
-
-#### `atl jira add-comment <key> <body>`
-
-Add a comment to an issue. Use `-` as body to read from stdin.
-
-```bash
-atl jira add-comment PROJ-123 "Investigating the root cause"
-echo "Long analysis..." | atl jira add-comment PROJ-123 -
-```
-
----
-
-#### `atl jira get-transitions <key>`
-
-Get available workflow transitions for an issue.
-
-```bash
-atl jira get-transitions PROJ-123
-```
-
----
-
-#### `atl jira transition-issue <key>`
-
-Transition an issue to a new status. Accepts transition name (fuzzy matched) or ID.
-
-```bash
-atl jira transition-issue PROJ-123 --transition "In Progress"
-atl jira transition-issue PROJ-123 --transition Done --resolution Fixed --comment "Deployed"
-```
-
-**Options:**
-
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--transition <nameOrId>` | Yes | Transition name or ID |
-| `--comment <text>` | No | Add comment with the transition |
-| `--resolution <name>` | No | Set resolution (Done, Fixed, etc.) |
-
----
+| Command | Purpose |
+|---------|---------|
+| `atl jira search <jql>` | Search issues by JQL |
+| `atl jira get-issue <key>` | Full issue details with comments |
+| `atl jira download-attachments` | Download attachments from an issue |
+| `atl jira create-issue` | Create a new issue |
+| `atl jira update-issue <key>` | Update issue fields |
+| `atl jira add-comment <key> <body>` | Add a comment |
+| `atl jira get-transitions <key>` | List available workflow transitions |
+| `atl jira transition-issue <key>` | Transition an issue to a new status |
 
 ### Confluence
 
-#### `atl confluence search <query>`
+| Command | Purpose |
+|---------|---------|
+| `atl confluence search <query>` | Search pages and blog posts |
+| `atl confluence get-page` | Get a page (markdown by default) |
+| `atl confluence download-attachments` | Download attachments from a page |
+| `atl confluence create-page` | Create a new page |
+| `atl confluence update-page` | Update an existing page |
+| `atl confluence add-comment <body>` | Add a comment to a page |
 
-Search pages and blog posts. Accepts plain text (auto-wrapped as CQL) or raw [CQL (Confluence Query Language)](https://developer.atlassian.com/server/confluence/advanced-searching-using-cql/).
-
-```bash
-# Plain text search (auto-converts to CQL)
-atl confluence search "deployment guide"
-
-# CQL query
-atl confluence search "type = page AND space = DEV AND title ~ 'API'"
-
-# Filter by spaces
-atl confluence search "onboarding" --spaces DEV,HR
-
-# Paginate
-atl confluence search "architecture" --limit 5 --offset 10
-```
-
-**Options:**
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `-l, --limit <n>` | 10 | Maximum results to return |
-| `--offset <n>` | 0 | Skip this many results (pagination) |
-| `-s, --spaces <keys>` | all | Comma-separated space keys to filter |
-| `--json` | auto | Force JSON output |
-
-**Output (JSON):**
-```json
-{
-  "results": [
-    {
-      "id": "12345",
-      "title": "Deployment Guide",
-      "type": "page",
-      "spaceKey": "DEV",
-      "spaceName": "Development",
-      "lastModified": "2024-01-16T14:20:00.000Z",
-      "excerpt": "This guide covers the **deployment** process for production...",
-      "url": "https://company.atlassian.net/wiki/spaces/DEV/pages/12345"
-    }
-  ],
-  "total": 15,
-  "hasMore": true
-}
-```
-
-**Query auto-detection:** If your query doesn't contain CQL operators (`=`, `~`, `>`, `<`, `AND`, `OR`, `NOT`, `IN`, `currentUser()`), it's treated as a plain text search and wrapped as `siteSearch ~ "your query"`. Otherwise it's passed as raw CQL.
-
----
-
-#### `atl confluence get-page`
-
-Get full page content, converted to markdown by default.
-
-```bash
-# By page ID
-atl confluence get-page --id 12345
-
-# By title and space
-atl confluence get-page --title "API Documentation" --space DEV
-
-# Raw HTML (skip markdown conversion)
-atl confluence get-page --id 12345 --raw
-```
-
-**Options:**
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--id <pageId>` | — | Page ID (numeric) |
-| `--title <title>` | — | Page title (requires `--space`) |
-| `--space <key>` | — | Space key (requires `--title`) |
-| `--raw` | false | Return raw HTML instead of markdown |
-| `--json` | auto | Force JSON output |
-
-You must provide either `--id` or both `--title` and `--space`.
-
-**Output (JSON):**
-```json
-{
-  "id": "12345",
-  "title": "API Documentation",
-  "spaceKey": "DEV",
-  "spaceName": "Development",
-  "body": "# API Documentation\n\nThis page describes our REST API endpoints...",
-  "version": 5,
-  "lastModified": "2024-01-16T14:20:00.000Z",
-  "lastModifiedBy": "John Doe",
-  "url": "https://company.atlassian.net/wiki/spaces/DEV/pages/12345"
-}
-```
-
-**Content conversion:** Confluence stores pages in XHTML ("storage format"). By default, the CLI converts this to clean markdown using [Turndown](https://github.com/mixmark-io/turndown). Confluence-specific macros (like `<ac:structured-macro>`) are converted to `[macro: name]` placeholders. Use `--raw` to get the original HTML.
-
----
-
-#### `atl confluence create-page`
-
-Create a new Confluence page.
-
-```bash
-# Basic page
-atl confluence create-page --space DEV --title "API Guide" --body "# API Guide\n\nContent..."
-
-# Child page
-atl confluence create-page -s DEV --title "Sub Page" -b "Content" --parent-id 12345
-
-# From stdin (pipe a markdown file)
-cat README.md | atl confluence create-page -s DEV --title "README" -b -
-
-# Raw storage format
-atl confluence create-page -s DEV --title "Raw" -b "<h1>Hello</h1>" --format storage
-```
-
-**Options:**
-
-| Flag | Required | Description |
-|------|----------|-------------|
-| `-s, --space <key>` | Yes | Space key |
-| `--title <title>` | Yes | Page title |
-| `-b, --body <content>` | Yes | Page body (use `-` to read from stdin) |
-| `--parent-id <id>` | No | Parent page ID |
-| `--format <format>` | No | `markdown` (default) or `storage` |
-
----
-
-#### `atl confluence update-page`
-
-Update an existing Confluence page. Auto-detects current version if not specified.
-
-```bash
-atl confluence update-page --id 12345 --body "# Updated\n\nNew content"
-atl confluence update-page --id 12345 --title "New Title" --body "Content"
-cat doc.md | atl confluence update-page --id 12345 -b -
-```
-
-**Options:**
-
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--id <pageId>` | Yes | Page ID |
-| `-b, --body <content>` | Yes | New body (use `-` for stdin) |
-| `--title <title>` | No | New page title |
-| `--format <format>` | No | `markdown` (default) or `storage` |
-| `--version <n>` | No | Version number (auto-detected) |
-
----
-
-#### `atl confluence add-comment <body>`
-
-Add a comment to a Confluence page. Use `-` as body to read from stdin.
-
-```bash
-atl confluence add-comment "Great docs!" --page-id 12345
-atl confluence add-comment "Reply" --page-id 12345 --parent-comment-id 67890
-```
-
-**Options:**
-
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--page-id <id>` | Yes | Page ID |
-| `--parent-comment-id <id>` | No | Parent comment ID (for threaded replies) |
+Run `atl <command> --help` for full options on any command. Detailed examples and JSON output schemas are in the [skill files](./src/skills/atl-jira/SKILL.md) shipped with the package.
 
 ---
 
@@ -528,9 +229,7 @@ atl jira search "project = PROJ" --json
 
 ---
 
-## Cloud vs Server/Data Center
-
-The CLI works with both Atlassian Cloud and self-hosted Server/Data Center deployments. Differences are handled automatically:
+## Cloud vs Server / Data Center
 
 | | Cloud | Server / Data Center |
 |---|---|---|
@@ -545,6 +244,7 @@ You don't need to specify which deployment type you're using — the CLI detects
 ### Authentication Methods
 
 **Cloud — Basic Auth (email + API token):**
+
 ```bash
 export JIRA_URL=https://your-company.atlassian.net
 export JIRA_USERNAME=your.email@company.com    # Your Atlassian email
@@ -552,12 +252,14 @@ export JIRA_API_TOKEN=<token>                  # From id.atlassian.com
 ```
 
 **Server/DC — Personal Access Token (recommended):**
+
 ```bash
 export JIRA_URL=https://jira.yourcompany.com
 export JIRA_PERSONAL_TOKEN=<pat>               # From Jira → Profile → Personal Access Tokens
 ```
 
 **Server/DC — Basic Auth (legacy):**
+
 ```bash
 export JIRA_URL=https://jira.yourcompany.com
 export JIRA_USERNAME=your_username
@@ -565,6 +267,23 @@ export JIRA_API_TOKEN=your_password            # Yes, the password goes in API_T
 ```
 
 The same pattern applies to Confluence — replace `JIRA_` with `CONFLUENCE_`.
+
+> **Self-signed certs?** Node's native `fetch` doesn't support per-request TLS bypass. If your Server/DC instance uses a self-signed cert, run with `NODE_TLS_REJECT_UNAUTHORIZED=0` set process-wide.
+
+---
+
+## Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `JIRA_URL` | For Jira | Jira instance URL |
+| `JIRA_USERNAME` | Cloud | Your email address |
+| `JIRA_API_TOKEN` | Cloud | API token from id.atlassian.com |
+| `JIRA_PERSONAL_TOKEN` | Server/DC | Personal access token |
+| `CONFLUENCE_URL` | For Confluence | Confluence instance URL |
+| `CONFLUENCE_USERNAME` | Cloud | Your email address |
+| `CONFLUENCE_API_TOKEN` | Cloud | API token from id.atlassian.com |
+| `CONFLUENCE_PERSONAL_TOKEN` | Server/DC | Personal access token |
 
 ---
 
@@ -585,6 +304,8 @@ This installs three modular skill files:
 | `atl-jira` | All Jira commands | `~/.claude/skills/atl-jira/SKILL.md` |
 | `atl-confluence` | All Confluence commands | `~/.claude/skills/atl-confluence/SKILL.md` |
 
+The same files are installed under `~/.cursor/rules/` (if Cursor is set up) and `~/.copilot/skills/`. Run from a git repo root to also append to `.github/copilot-instructions.md`.
+
 Agents load only the relevant skill (Jira or Confluence) on demand, not all commands at once.
 
 ### How it works
@@ -601,82 +322,17 @@ This is typically **5-10x cheaper in tokens** than the equivalent MCP flow, beca
 
 ---
 
-## Project Structure
+## Contributing / Local Development
 
-```
-atlassian-cli/
-├── bin/
-│   └── atl.ts                    # CLI entry point
-├── src/
-│   ├── config.ts                 # Environment variable loader, auth detection
-│   ├── http.ts                   # HTTP client (native fetch, auth headers)
-│   ├── output.ts                 # JSON vs human-readable formatting
-│   ├── errors.ts                 # Error classes (ConfigError, ApiError)
-│   ├── types/
-│   │   ├── common.ts             # Auth, config, deployment types
-│   │   ├── jira.ts               # Jira issue and search types
-│   │   └── confluence.ts         # Confluence page and search types
-│   ├── preprocessing/
-│   │   ├── adf-to-text.ts        # Jira Cloud ADF → markdown converter
-│   │   └── html-to-markdown.ts   # Confluence HTML → markdown (Turndown)
-│   ├── clients/
-│   │   ├── jira.ts               # Jira API client (Cloud v3 + Server v2)
-│   │   └── confluence.ts         # Confluence API client
-│   └── commands/
-│       ├── jira/
-│       │   ├── search.ts         # atl jira search
-│       │   └── get-issue.ts      # atl jira get-issue
-│       └── confluence/
-│           ├── search.ts         # atl confluence search
-│           └── get-page.ts       # atl confluence get-page
-├── .claude/skills/               # Claude Code skill definitions
-├── .env.example                  # Environment variable template
-├── package.json
-└── tsconfig.json
-```
+To build from source, run tests, or contribute new commands, see [`docs/dev/local-development.md`](./docs/dev/local-development.md).
+
+Bug reports and feature requests are welcome at [GitHub Issues](https://github.com/sahajamit/atlassian-cli/issues).
 
 ---
 
-## Environment Variables Reference
+## License
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `JIRA_URL` | For Jira | Jira instance URL |
-| `JIRA_USERNAME` | Cloud | Your email address |
-| `JIRA_API_TOKEN` | Cloud | API token from id.atlassian.com |
-| `JIRA_PERSONAL_TOKEN` | Server/DC | Personal access token |
-| `JIRA_SSL_VERIFY` | No | Set to `false` to skip SSL verification |
-| `CONFLUENCE_URL` | For Confluence | Confluence instance URL |
-| `CONFLUENCE_USERNAME` | Cloud | Your email address |
-| `CONFLUENCE_API_TOKEN` | Cloud | API token from id.atlassian.com |
-| `CONFLUENCE_PERSONAL_TOKEN` | Server/DC | Personal access token |
-| `CONFLUENCE_SSL_VERIFY` | No | Set to `false` to skip SSL verification |
-
----
-
-## Roadmap
-
-Phase 1 (read-only) and Phase 2 (write operations) are complete. Phase 3 will add:
-
-**Jira:**
-- `atl jira list-projects` — List accessible projects
-- `atl jira list-boards` — List agile boards
-- `atl jira list-sprints` — List sprints for a board
-- `atl jira get-sprint-issues` — Sprint board view
-- `atl jira link-issues` — Link two issues
-- `atl jira delete-issue` — Delete an issue
-
-**Confluence:**
-- `atl confluence get-children` — Get child pages
-- `atl confluence get-page-tree` — Space page hierarchy
-- `atl confluence delete-page` — Delete a page
-- `atl confluence get-labels` / `add-label` — Label management
-- `atl confluence get-page-history` — Version history
-
-**Infrastructure:**
-- `atl configure` — Interactive setup wizard
-- Config file support (`~/.config/atl/config.json`)
-- OAuth 2.0 support for Cloud
+MIT — see [LICENSE](./LICENSE).
 
 ---
 
